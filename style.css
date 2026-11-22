@@ -30,6 +30,7 @@ html, body {
   font-family: var(--font-main);
   background: linear-gradient(180deg, #7ed8ff 0%, #d8f4ff 60%, #ffeef5 100%);
   touch-action: none;
+  -webkit-text-size-adjust: 100%;
   color: var(--color-text);
 }
 
@@ -221,7 +222,7 @@ button {
   cursor: pointer;
   border: none;
   outline: none;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 /* 右上設定ボタン */

@@ -22,11 +22,38 @@ class ControlsManager {
     this.joyKnob = document.getElementById('joystick-knob');
     this.btnJump = document.getElementById('btn-jump');
 
+    this._preventIosZoom();
     this._bindEvents();
   }
 
+  _preventIosZoom() {
+    // iPad / iOS Safari のダブルタップズーム・ピンチズーム抑止
+    let lastTouchEnd = 0;
+    document.addEventListener(
+      'touchend',
+      (e) => {
+        const now = performance.now();
+        if (now - lastTouchEnd <= 350) {
+          e.preventDefault();
+          const btn = e.target && e.target.closest ? e.target.closest('button') : null;
+          if (btn && btn.id !== 'btn-jump') {
+            btn.click();
+          }
+        }
+        lastTouchEnd = now;
+      },
+      { passive: false }
+    );
+
+    const preventDefault = (e) => e.preventDefault();
+    document.addEventListener('dblclick', preventDefault, { passive: false });
+    document.addEventListener('gesturestart', preventDefault, { passive: false });
+    document.addEventListener('gesturechange', preventDefault, { passive: false });
+    document.addEventListener('gestureend', preventDefault, { passive: false });
+  }
+
   _bindEvents() {
-    // 左側エリア：フローティングジョイスティック
+    // 左下エリア：フローティングジョイスティック
     this.leftZone.addEventListener('pointerdown', (e) => {
       if (this.joyPointerId !== null) return;
       e.preventDefault();
@@ -66,7 +93,7 @@ class ControlsManager {
     this.leftZone.addEventListener('pointerup', releaseJoy);
     this.leftZone.addEventListener('pointercancel', releaseJoy);
 
-    // 右側エリア：カメラ視点変更
+    // カメラ視点変更エリア
     this.rightZone.addEventListener('pointerdown', (e) => {
       if (this.camPointerId !== null) return;
       e.preventDefault();

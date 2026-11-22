@@ -1,0 +1,578 @@
+:root {
+  --font-main: 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', 'Rounded Mplus 1c', sans-serif;
+  --color-rose: #ff5e7e;
+  --color-rose-deep: #d6385b;
+  --color-coral: #ff6262;
+  --color-coral-deep: #d13838;
+  --color-sky: #4db8eb;
+  --color-sky-deep: #2993c9;
+  --color-gold: #ebc063;
+  --color-text: #593a3e;
+  --color-text-soft: #856368;
+  --glass-bg: rgba(255, 252, 254, 0.86);
+  --glass-border: rgba(255, 255, 255, 0.95);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-main);
+  background: linear-gradient(180deg, #7ed8ff 0%, #d8f4ff 60%, #ffeef5 100%);
+  touch-action: none;
+  color: var(--color-text);
+}
+
+#game-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body.pseudo-fullscreen #game-container {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* 復帰フラッシュ */
+.respawn-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.95) 0%, rgba(255, 240, 248, 0.9) 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 15;
+}
+
+.respawn-flash.active {
+  opacity: 1;
+}
+
+/* HUD */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.touch-zone {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* 左下限定：フローティングジョイスティック用エリア */
+.left-zone {
+  left: 0;
+  bottom: 0;
+  width: 42%;
+  height: 50%;
+  z-index: 2;
+}
+
+/* それ以外の広い領域：カメラ視点変更用エリア */
+.right-zone {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* フローティングジョイスティック */
+.joystick-base {
+  position: absolute;
+  width: 116px;
+  height: 116px;
+  margin-left: -58px;
+  margin-top: -58px;
+  border-radius: 50%;
+  background: rgba(255, 252, 254, 0.42);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 24px rgba(102, 138, 173, 0.2), inset 0 0 12px rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 50px;
+  height: 50px;
+  margin-left: -25px;
+  margin-top: -25px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ff7b89 0%, #f24455 100%);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(214, 56, 91, 0.35);
+}
+
+/* ハートちゃんふれあいテキストウィンドウ */
+.dialogue-box {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(90vw, 430px);
+  background: rgba(255, 252, 254, 0.92);
+  border-radius: 26px;
+  padding: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 14px 34px rgba(105, 134, 168, 0.24),
+    0 4px 14px rgba(244, 83, 138, 0.18);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+  z-index: 18;
+  animation: dialoguePopIn 0.32s cubic-bezier(0.22, 1.28, 0.36, 1) forwards;
+}
+
+.dialogue-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 20px;
+  border: 1.5px solid rgba(244, 152, 186, 0.45);
+  background: linear-gradient(135deg, rgba(255, 246, 250, 0.85) 0%, rgba(255, 255, 255, 0.75) 100%);
+}
+
+.dialogue-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: #ffeaf2;
+  border: 2px solid #ffffff;
+  box-shadow: 0 3px 8px rgba(244, 83, 138, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dialogue-content {
+  text-align: left;
+  min-width: 0;
+}
+
+.dialogue-speaker {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  background: linear-gradient(90deg, #ff7aa8 0%, #f4538a 100%);
+  padding: 2px 10px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+}
+
+.dialogue-text {
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+
+@keyframes dialoguePopIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -14px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* ボタン共通 */
+button {
+  font-family: var(--font-main);
+  cursor: pointer;
+  border: none;
+  outline: none;
+  touch-action: manipulation;
+}
+
+/* 右上設定ボタン */
+.btn-circle {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  right: max(18px, env(safe-area-inset-right));
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 252, 254, 0.85);
+  color: var(--color-text);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6px 18px rgba(82, 118, 150, 0.2), 0 0 0 1px rgba(235, 192, 99, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 20;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+.btn-circle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(82, 118, 150, 0.25), 0 0 0 1px rgba(235, 192, 99, 0.55);
+}
+
+.btn-circle:active {
+  transform: scale(0.93);
+}
+
+/* 右下ジャンプボタン */
+.btn-jump {
+  position: absolute;
+  right: max(26px, env(safe-area-inset-right));
+  bottom: max(26px, env(safe-area-inset-bottom));
+  width: 102px;
+  height: 102px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 138, 174, 0.94) 0%, rgba(247, 86, 134, 0.96) 100%);
+  color: #ffffff;
+  border: 3px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 10px 26px rgba(214, 56, 91, 0.32),
+    inset 0 2px 6px rgba(255, 255, 255, 0.55),
+    0 0 0 2px rgba(255, 166, 196, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.jump-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  opacity: 0.95;
+}
+
+.btn-jump.pressed,
+.btn-jump:active {
+  transform: scale(0.92);
+  box-shadow:
+    0 4px 12px rgba(214, 56, 91, 0.3),
+    inset 0 2px 6px rgba(255, 255, 255, 0.45);
+}
+
+/* オーバーレイ画面（タイトル・設定） */
+.overlay-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 248, 252, 0.25) 0%, rgba(145, 216, 255, 0.38) 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 30;
+}
+
+.title-card,
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--glass-bg);
+  border-radius: 34px;
+  padding: 10px;
+  border: 2px solid var(--glass-border);
+  box-shadow:
+    0 24px 54px rgba(74, 108, 145, 0.22),
+    0 4px 16px rgba(255, 143, 179, 0.16);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.card-inner-frame {
+  border-radius: 26px;
+  border: 1.5px solid rgba(235, 192, 99, 0.38);
+  padding: 26px 22px 24px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 247, 251, 0.45) 100%);
+}
+
+.title-emblem {
+  margin-bottom: 4px;
+}
+
+.title-subtitle {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  color: #c79a4b;
+  margin-bottom: 6px;
+}
+
+.game-title {
+  margin: 0 0 12px;
+  line-height: 1.18;
+  font-weight: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.title-aka {
+  font-size: 32px;
+  letter-spacing: 0.06em;
+  color: #f0485c;
+  text-shadow: 0 3px 0 #ffe3e7;
+}
+
+.title-sky {
+  font-size: 38px;
+  letter-spacing: 0.04em;
+  color: #35a7e0;
+  text-shadow: 0 3px 0 #dcf2ff;
+}
+
+.title-desc {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--color-text-soft);
+  margin: 0 0 18px;
+  font-weight: 500;
+}
+
+/* 操作ガイド */
+.controls-guide {
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  padding: 12px 14px;
+  margin-bottom: 22px;
+  border: 1px solid rgba(220, 236, 248, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: left;
+}
+
+.guide-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.guide-move {
+  background: #ffe8ee;
+  color: #e6496b;
+}
+
+.guide-jump {
+  background: #fff2db;
+  color: #d68c29;
+}
+
+.guide-cam {
+  background: #e3f5ff;
+  color: #2c96cc;
+}
+
+/* プライマリボタン */
+.btn-primary {
+  width: 100%;
+  padding: 15px 24px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff7a8f 0%, #f54e6b 100%);
+  color: #ffffff;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border: 2.5px solid #ffffff;
+  box-shadow:
+    0 10px 24px rgba(245, 78, 107, 0.32),
+    inset 0 2px 4px rgba(255, 255, 255, 0.45);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 26px rgba(245, 78, 107, 0.38),
+    inset 0 2px 4px rgba(255, 255, 255, 0.5);
+}
+
+.btn-primary:active {
+  transform: translateY(2px) scale(0.98);
+  box-shadow: 0 5px 12px rgba(245, 78, 107, 0.28);
+}
+
+/* 設定モーダル */
+.modal-title {
+  margin: 0 0 18px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--color-text);
+}
+
+.setting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.btn-setting-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1.5px solid rgba(218, 234, 247, 0.9);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(102, 138, 173, 0.08);
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+
+.btn-setting-item:active {
+  transform: scale(0.98);
+}
+
+.setting-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setting-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #eff8ff;
+  color: #3599cf;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-setting-item.btn-danger {
+  background: rgba(255, 245, 247, 0.9);
+  border-color: rgba(255, 209, 220, 0.9);
+  color: #cf3a56;
+  justify-content: center;
+}
+
+.btn-setting-item.btn-danger .setting-icon {
+  background: #ffe8ee;
+  color: #cf3a56;
+}
+
+.setting-badge {
+  position: relative;
+  min-width: 54px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: #dce5ee;
+  color: #6b7d8e;
+  text-align: center;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.setting-badge.on {
+  background: linear-gradient(180deg, #6bd9a8 0%, #48bf8a 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(72, 191, 138, 0.35);
+}
+
+.btn-close {
+  background: linear-gradient(180deg, #6dc9f7 0%, #3ca6de 100%);
+  box-shadow:
+    0 8px 20px rgba(60, 166, 222, 0.28),
+    inset 0 2px 4px rgba(255, 255, 255, 0.45);
+  font-size: 16px;
+  padding: 13px 20px;
+}
+
+.btn-close:hover {
+  box-shadow:
+    0 10px 22px rgba(60, 166, 222, 0.34),
+    inset 0 2px 4px rgba(255, 255, 255, 0.5);
+}
+
+@media (max-width: 600px) {
+  .btn-jump {
+    width: 88px;
+    height: 88px;
+    right: 18px;
+    bottom: 18px;
+  }
+  .joystick-base {
+    width: 102px;
+    height: 102px;
+    margin-left: -51px;
+    margin-top: -51px;
+  }
+  .title-aka {
+    font-size: 28px;
+  }
+  .title-sky {
+    font-size: 33px;
+  }
+  .dialogue-box {
+    top: max(76px, calc(env(safe-area-inset-top) + 60px));
+  }
+}

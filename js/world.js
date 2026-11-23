@@ -23,8 +23,7 @@ class HeartBuddy {
     this._createVisuals();
 
     this.group.position.copy(centerPos);
-    // 従来の1.05の80%サイズ
-    this.group.scale.setScalar(0.84);
+    this.group.scale.setScalar(0.68);
   }
 
   setHomeCloud(cloud, immediate = false) {

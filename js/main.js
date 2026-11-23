@@ -33,6 +33,7 @@ class MaimaiGame {
     this.remoteHeartState = null;
     this.netSendTimer = 0;
     this.bumpCooldown = 0;
+    this.rideCooldown = 0;
     this.toastTimer = 0;
 
     // ハートちゃんふれあい状態
@@ -95,6 +96,28 @@ class MaimaiGame {
     }
   }
 
+  _sendStatePacket() {
+    if (this.gameMode === 'solo' || !this.network.isConnected) return;
+    const p = this.player.position;
+    const v = this.player.velocity;
+    const q = this.player.rollQuat;
+    const payload = {
+      type: 'state',
+      p: [p.x, p.y, p.z],
+      v: [v.x, v.y, v.z],
+      q: [q.x, q.y, q.z, q.w],
+      sq: this.player.squashY,
+      ex: this.player.expression,
+      g: this.player.isGrounded,
+      rd: this.player.isRidingPartner ? 1 : 0
+    };
+    if (this.gameMode === 'host') {
+      payload.wt = this.world.time;
+      payload.heart = this.world.heartBuddy.getSyncState();
+    }
+    this.network.send(payload);
+  }
+
   _bindNetworkEvents() {
     this.network.onConnected = () => {
       const partnerTheme = this.gameMode === 'host' ? 'yellow' : 'red';
@@ -121,6 +144,7 @@ class MaimaiGame {
 
     this.network.onDisconnected = () => {
       this._removeRemotePlayer();
+      this.player.isRidingPartner = false;
       this.btnWarpPartner.classList.add('hidden');
       this.roomPartnerStatus.textContent = 'あいてが退出しました';
       this.roomPartnerStatus.classList.remove('online');
@@ -345,7 +369,6 @@ class MaimaiGame {
     this.respawnFlash.classList.add('active');
     const target = this.remotePlayer.position.clone().add(new THREE.Vector3(0, 2.0, 0));
 
-    // ワープ先チャンクの雲を即座に生成
     this.world.updateChunks(
       target,
       0.016,
@@ -417,6 +440,7 @@ class MaimaiGame {
     this.controls.reset();
     this._hideDialogue();
     this.isTouchingHeart = false;
+    this.rideCooldown = 0;
 
     const isYellow = mode === 'guest';
     this.player.setColorTheme(isYellow ? 'yellow' : 'red');
@@ -468,6 +492,7 @@ class MaimaiGame {
     this.controls.reset();
     this._hideDialogue();
     this.isTouchingHeart = false;
+    this.rideCooldown = 0;
 
     this.player.setColorTheme('red');
     this.joystickKnob.classList.remove('yellow');
@@ -499,7 +524,11 @@ class MaimaiGame {
           this.remotePlayer.position.y,
           this.remotePlayer.position.z
         );
-        this.remotePlayer.updateRemoteVisuals(dt, rShadow);
+        this.remotePlayer.updateRemoteVisuals(
+          dt,
+          rShadow,
+          this.remotePlayer.isRidingPartner ? this.player.position : null
+        );
       }
     } else if (!this.isPlaying) {
       this.camYaw += dt * 0.18;
@@ -522,23 +551,7 @@ class MaimaiGame {
     this.netSendTimer += dt;
     if (this.netSendTimer >= 0.033) {
       this.netSendTimer = 0;
-      const p = this.player.position;
-      const v = this.player.velocity;
-      const q = this.player.rollQuat;
-      const payload = {
-        type: 'state',
-        p: [p.x, p.y, p.z],
-        v: [v.x, v.y, v.z],
-        q: [q.x, q.y, q.z, q.w],
-        sq: this.player.squashY,
-        ex: this.player.expression,
-        g: this.player.isGrounded
-      };
-      if (this.gameMode === 'host') {
-        payload.wt = this.world.time;
-        payload.heart = this.world.heartBuddy.getSyncState();
-      }
-      this.network.send(payload);
+      this._sendStatePacket();
     }
   }
 
@@ -557,9 +570,8 @@ class MaimaiGame {
       }
     }
 
-    if (this.bumpCooldown > 0) {
-      this.bumpCooldown -= dt;
-    }
+    if (this.bumpCooldown > 0) this.bumpCooldown -= dt;
+    if (this.rideCooldown > 0) this.rideCooldown -= dt;
 
     const camD = this.controls.consumeCameraDelta();
     this.camYaw -= camD.x * 0.0055;
@@ -572,54 +584,38 @@ class MaimaiGame {
       this.remoteHeartState
     );
 
-    if (this.player.isGrounded && this.player.groundCloud) {
-      this.player.position.add(this.player.groundCloud.deltaPos);
+    const prevRiding = this.player.isRidingPartner;
+
+    // 相手プレイヤーの位置・ビジュアルを先に更新（頭上固定時は同期遅れを防ぐ）
+    if (this.remotePlayer) {
+      const rShadow = this.world.getShadowGroundInfo(
+        this.remotePlayer.position.x,
+        this.remotePlayer.position.y,
+        this.remotePlayer.position.z
+      );
+      this.remotePlayer.updateRemoteVisuals(
+        dt,
+        rShadow,
+        this.remotePlayer.isRidingPartner ? this.player.position : null
+      );
+    } else {
+      this.player.isRidingPartner = false;
     }
 
     const move = this.controls.getMoveVector();
-    const forward = new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
-    const right = new THREE.Vector3(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
-
-    const wishDir = new THREE.Vector3()
-      .addScaledVector(right, move.x)
-      .addScaledVector(forward, -move.y);
-
-    const maxSpeed = 10.5;
     const inputMag = Math.min(1, Math.hypot(move.x, move.y));
-
-    if (inputMag > 0.05 && wishDir.lengthSq() > 0.0001) {
-      wishDir.normalize();
-      const targetVx = wishDir.x * maxSpeed * inputMag;
-      const targetVz = wishDir.z * maxSpeed * inputMag;
-      const grip = this.player.isGrounded ? 15.0 : 5.5;
-      const alpha = 1 - Math.exp(-grip * dt);
-      this.player.velocity.x = THREE.MathUtils.lerp(this.player.velocity.x, targetVx, alpha);
-      this.player.velocity.z = THREE.MathUtils.lerp(this.player.velocity.z, targetVz, alpha);
-    } else {
-      const stopRate = this.player.isGrounded ? 22.0 : 4.0;
-      const decay = Math.exp(-stopRate * dt);
-      this.player.velocity.x *= decay;
-      this.player.velocity.z *= decay;
-      if (this.player.isGrounded && Math.hypot(this.player.velocity.x, this.player.velocity.z) < 0.08) {
-        this.player.velocity.x = 0;
-        this.player.velocity.z = 0;
-      }
-    }
-
-    if (this.controls.consumeJump()) {
+    const jumpPressed = this.controls.consumeJump();
+    if (jumpPressed) {
       this.player.jumpBufferTimer = 0.14;
     } else if (this.player.jumpBufferTimer > 0) {
       this.player.jumpBufferTimer -= dt;
     }
 
-    if (this.player.isGrounded) {
-      this.player.coyoteTimer = 0.12;
-    } else if (this.player.coyoteTimer > 0) {
-      this.player.coyoteTimer -= dt;
-    }
-
-    if (this.player.jumpBufferTimer > 0) {
-      if (this.player.coyoteTimer > 0) {
+    // 仲間の頭に乗っている間の固定処理
+    if (this.player.isRidingPartner && this.remotePlayer) {
+      if (this.player.jumpBufferTimer > 0) {
+        this.player.isRidingPartner = false;
+        this.rideCooldown = 0.28;
         this.player.velocity.y = 14.5;
         this.player.isGrounded = false;
         this.player.groundCloud = null;
@@ -630,33 +626,109 @@ class MaimaiGame {
         this.player.setExpression('jump', 0.4);
         this.sound.playJump();
         this._sendSe('jump');
-      } else if (this.player.airJumpsLeft > 0) {
-        this.player.velocity.y = 13.6;
-        this.player.airJumpsLeft--;
-        this.player.jumpBufferTimer = 0;
-        this.player.triggerSquash(1.42);
-        this.player.setExpression('happy', 0.45);
-        this.player.spawnDoubleJumpRing();
-        this.sound.playDoubleJump();
-        if (this.network.isConnected) {
-          this.network.send({ type: 'dj' });
-        }
+      } else if (inputMag > 0.06) {
+        this.player.isRidingPartner = false;
+        this.rideCooldown = 0.28;
+      } else {
+        const rp = this.remotePlayer.position;
+        this.player.position.set(rp.x, rp.y + this.player.radius + this.remotePlayer.radius - 0.04, rp.z);
+        this.player.velocity.set(0, 0, 0);
+        this.player.isGrounded = true;
+        this.player.coyoteTimer = 0.12;
+        this.player.airJumpsLeft = 1;
       }
     }
 
-    this.player.velocity.y -= 32.0 * dt;
-    this.player.velocity.y = Math.max(this.player.velocity.y, -28);
+    // 通常移動・物理処理
+    if (!this.player.isRidingPartner) {
+      if (this.player.isGrounded && this.player.groundCloud) {
+        this.player.position.add(this.player.groundCloud.deltaPos);
+      }
 
-    this.player.position.addScaledVector(this.player.velocity, dt);
+      const forward = new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
+      const right = new THREE.Vector3(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
 
-    const wasGrounded = this.player.isGrounded;
-    this.player.isGrounded = false;
-    this.player.groundCloud = null;
+      const wishDir = new THREE.Vector3()
+        .addScaledVector(right, move.x)
+        .addScaledVector(forward, -move.y);
 
-    this._resolveCollisions(wasGrounded);
+      const maxSpeed = 10.5;
 
-    if (this.remotePlayer) {
-      this._resolvePlayerInteraction(wasGrounded, dt);
+      if (inputMag > 0.05 && wishDir.lengthSq() > 0.0001) {
+        wishDir.normalize();
+        const targetVx = wishDir.x * maxSpeed * inputMag;
+        const targetVz = wishDir.z * maxSpeed * inputMag;
+        const grip = this.player.isGrounded ? 15.0 : 5.5;
+        const alpha = 1 - Math.exp(-grip * dt);
+        this.player.velocity.x = THREE.MathUtils.lerp(this.player.velocity.x, targetVx, alpha);
+        this.player.velocity.z = THREE.MathUtils.lerp(this.player.velocity.z, targetVz, alpha);
+      } else {
+        const stopRate = this.player.isGrounded ? 22.0 : 4.0;
+        const decay = Math.exp(-stopRate * dt);
+        this.player.velocity.x *= decay;
+        this.player.velocity.z *= decay;
+        if (this.player.isGrounded && Math.hypot(this.player.velocity.x, this.player.velocity.z) < 0.08) {
+          this.player.velocity.x = 0;
+          this.player.velocity.z = 0;
+        }
+      }
+
+      if (this.player.isGrounded) {
+        this.player.coyoteTimer = 0.12;
+      } else if (this.player.coyoteTimer > 0) {
+        this.player.coyoteTimer -= dt;
+      }
+
+      if (this.player.jumpBufferTimer > 0) {
+        if (this.player.coyoteTimer > 0) {
+          this.player.velocity.y = 14.5;
+          this.player.isGrounded = false;
+          this.player.groundCloud = null;
+          this.player.airJumpsLeft = 1;
+          this.player.jumpBufferTimer = 0;
+          this.player.coyoteTimer = 0;
+          this.player.triggerSquash(1.38);
+          this.player.setExpression('jump', 0.4);
+          this.sound.playJump();
+          this._sendSe('jump');
+        } else if (this.player.airJumpsLeft > 0) {
+          this.player.velocity.y = 13.6;
+          this.player.airJumpsLeft--;
+          this.player.jumpBufferTimer = 0;
+          this.player.triggerSquash(1.42);
+          this.player.setExpression('happy', 0.45);
+          this.player.spawnDoubleJumpRing();
+          this.sound.playDoubleJump();
+          if (this.network.isConnected) {
+            this.network.send({ type: 'dj' });
+          }
+        }
+      }
+
+      this.player.velocity.y -= 32.0 * dt;
+      this.player.velocity.y = Math.max(this.player.velocity.y, -28);
+
+      this.player.position.addScaledVector(this.player.velocity, dt);
+
+      const wasGrounded = this.player.isGrounded;
+      this.player.isGrounded = false;
+      this.player.groundCloud = null;
+
+      this._resolveCollisions(wasGrounded);
+
+      if (this.remotePlayer) {
+        this._resolvePlayerInteraction(wasGrounded);
+      }
+    }
+
+    // 自分の移動後に相手が自分の頭に乗っていた場合、即座に相手の見た目位置も追従させる
+    if (this.remotePlayer && this.remotePlayer.isRidingPartner) {
+      const rShadow = this.world.getShadowGroundInfo(
+        this.remotePlayer.position.x,
+        this.remotePlayer.position.y,
+        this.remotePlayer.position.z
+      );
+      this.remotePlayer.updateRemoteVisuals(0, rShadow, this.player.position);
     }
 
     const heartDist = this.player.position.distanceTo(this.world.heartBuddy.group.position);
@@ -677,7 +749,7 @@ class MaimaiGame {
       ? this.player.safeCloud.position.y + this.player.safeLocalOffset.y
       : this.player.safeFallbackPos.y;
 
-    if (!this.isRespawning && this.player.position.y < Math.min(-18, safeY - 22)) {
+    if (!this.isRespawning && !this.player.isRidingPartner && this.player.position.y < Math.min(-18, safeY - 22)) {
       this._respawn();
     }
 
@@ -688,21 +760,19 @@ class MaimaiGame {
     );
     this.player.updateVisuals(dt, shadowInfo);
 
-    if (this.remotePlayer) {
-      const rShadow = this.world.getShadowGroundInfo(
-        this.remotePlayer.position.x,
-        this.remotePlayer.position.y,
-        this.remotePlayer.position.z
-      );
-      this.remotePlayer.updateRemoteVisuals(dt, rShadow);
+    // 乗り降りが発生したフレームは即座に状態送信
+    if (prevRiding !== this.player.isRidingPartner) {
+      this._sendStatePacket();
+    } else {
+      this._syncNetwork(dt);
     }
-
-    this._syncNetwork(dt);
 
     this._updateCamera(dt);
   }
 
-  _resolvePlayerInteraction(wasGrounded, dt) {
+  _resolvePlayerInteraction(wasGrounded) {
+    if (this.remotePlayer.isRidingPartner) return;
+
     const p = this.player.position;
     const rp = this.remotePlayer.position;
 
@@ -718,17 +788,10 @@ class MaimaiGame {
       const nz = dz / dist;
       const penetration = minDist - dist;
 
-      if (ny > 0.52 && this.player.velocity.y <= 1.2) {
-        p.x += nx * penetration;
-        p.y += ny * penetration;
-        p.z += nz * penetration;
-
-        p.x += this.remotePlayer.velocity.x * dt * 0.7;
-        p.z += this.remotePlayer.velocity.z * dt * 0.7;
-
-        if (this.player.velocity.y < 0) {
-          this.player.velocity.y = 0;
-        }
+      if (this.rideCooldown <= 0 && ny > 0.45 && this.player.velocity.y <= 2.0 && p.y > rp.y + 0.25) {
+        this.player.isRidingPartner = true;
+        p.set(rp.x, rp.y + minDist - 0.04, rp.z);
+        this.player.velocity.set(0, 0, 0);
         this.player.isGrounded = true;
         this.player.airJumpsLeft = 1;
 

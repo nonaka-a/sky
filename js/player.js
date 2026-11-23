@@ -12,6 +12,7 @@ class Player {
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.airJumpsLeft = 1; // 2段ジャンプ用
+    this.isRidingPartner = false; // 仲間の頭に乗っている状態
 
     // リモート補間ターゲット
     this.remoteTargetPos = new THREE.Vector3(0, 4, 0);
@@ -50,7 +51,6 @@ class Player {
   }
 
   _createVisuals() {
-    // 球面UV比率(2:1)に合わせて1024x512で作成し、顔や目が横長にならないようにする
     this.faceCanvas = document.createElement('canvas');
     this.faceCanvas.width = 1024;
     this.faceCanvas.height = 512;
@@ -60,7 +60,6 @@ class Player {
 
     this._drawFace('normal', false);
 
-    // 本体球体（ハイライト・陰影なしのフラット質感）
     const sphereGeo = new THREE.SphereGeometry(this.radius, 36, 36);
     const sphereMat = new THREE.MeshBasicMaterial({
       map: this.faceTexture
@@ -72,7 +71,6 @@ class Player {
     this.rollHolder.add(this.sphereMesh);
     this.bodyPivot.add(this.rollHolder);
 
-    // イラスト風の太い濃茶色の輪郭線（アウトライン）
     const outlineGeo = new THREE.SphereGeometry(this.radius * 1.075, 32, 32);
     const outlineMat = new THREE.MeshBasicMaterial({
       color: 0x3b0d0c,
@@ -81,7 +79,6 @@ class Player {
     this.outlineMesh = new THREE.Mesh(outlineGeo, outlineMat);
     this.bodyPivot.add(this.outlineMesh);
 
-    // 雲の上に落ちる丸影
     const shadowGeo = new THREE.CircleGeometry(this.radius * 0.95, 24);
     const shadowMat = new THREE.MeshBasicMaterial({
       color: 0x628eb8,
@@ -109,21 +106,18 @@ class Player {
 
     const isYellow = this.colorTheme === 'yellow';
 
-    // ベース色（あかまいまい / きいろまいまい）
     ctx.fillStyle = isYellow ? '#ffd32c' : '#f23b3b';
     ctx.fillRect(0, 0, w, h);
 
     const cx = w * 0.5;
     const cy = h * 0.49;
 
-    // ほっぺ
     ctx.fillStyle = isYellow ? 'rgba(255, 128, 96, 0.52)' : 'rgba(255, 130, 150, 0.45)';
     ctx.beginPath();
     ctx.ellipse(cx - 82, cy + 20, 20, 11, 0, 0, Math.PI * 2);
     ctx.ellipse(cx + 82, cy + 20, 20, 11, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // 目を描画（まんまる）
     const eyeY = cy - 24;
     const eyeOffsetX = 48;
 
@@ -164,7 +158,6 @@ class Player {
         ctx.arc(ex, ey, eyeRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        // 瞳の白い点
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(ex - 7, ey - 8, expr === 'jump' ? 8.5 : 7, 0, Math.PI * 2);
@@ -178,7 +171,6 @@ class Player {
       });
     }
 
-    // 口を描画
     const mouthY = cy + 20;
     ctx.lineWidth = 8;
     ctx.strokeStyle = '#330808';
@@ -265,6 +257,7 @@ class Player {
     this.velocity.set(0, 0, 0);
     this.isGrounded = false;
     this.groundCloud = null;
+    this.isRidingPartner = false;
     this.airJumpsLeft = 1;
     this.rollQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.facingYaw);
     this.remoteTargetQuat.copy(this.rollQuat);
@@ -340,7 +333,6 @@ class Player {
       this.setExpression('normal');
     }
 
-    // ぽよんスプリング更新
     const k = 190;
     const damp = 14;
     const force = (1.0 - this.squashY) * k - this.squashVel * damp;
@@ -354,13 +346,12 @@ class Player {
     const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
     this.group.position.set(this.position.x, this.position.y + bottomOffset, this.position.z);
 
-    // 案A：移動時は物理的に転がり、停止時・ジャンプ時は顔が正面へ戻る
     const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     if (horizSpeed > 0.35) {
       this.facingYaw = Math.atan2(this.velocity.x, this.velocity.z);
     }
 
-    if (horizSpeed > 0.5 && this.isGrounded) {
+    if (horizSpeed > 0.5 && this.isGrounded && !this.isRidingPartner) {
       const moveDir = new THREE.Vector3(this.velocity.x, 0, this.velocity.z).normalize();
       const rollAxis = new THREE.Vector3(0, 1, 0).cross(moveDir).normalize();
       const angle = (horizSpeed * dt) / this.radius;
@@ -379,7 +370,6 @@ class Player {
     this._updateDropShadow(shadowInfo);
   }
 
-  // 協力プレイ相手用の補間ビジュアル更新
   applyRemoteState(state) {
     if (!state) return;
     this.remoteTargetPos.set(state.p[0], state.p[1], state.p[2]);
@@ -387,16 +377,26 @@ class Player {
     this.remoteTargetQuat.set(state.q[0], state.q[1], state.q[2], state.q[3]);
     this.remoteTargetSquash = state.sq;
     this.isGrounded = !!state.g;
+    this.isRidingPartner = !!state.rd;
     if (state.ex && this.expression !== state.ex) {
       this.setExpression(state.ex);
     }
   }
 
-  updateRemoteVisuals(dt, shadowInfo = null) {
+  updateRemoteVisuals(dt, shadowInfo = null, ridingHostPos = null) {
     this._updateRingsAndBlink(dt);
 
     const posAlpha = 1 - Math.exp(-18 * dt);
-    if (this.position.distanceTo(this.remoteTargetPos) > 12) {
+
+    if (this.isRidingPartner && ridingHostPos) {
+      // 相手が自分の頭に乗っている間は、遅延なく自分の頭上にダイレクト固定する
+      this.position.set(
+        ridingHostPos.x,
+        ridingHostPos.y + this.radius * 2 - 0.04,
+        ridingHostPos.z
+      );
+      this.remoteTargetPos.copy(this.position);
+    } else if (this.position.distanceTo(this.remoteTargetPos) > 12) {
       this.position.copy(this.remoteTargetPos);
     } else {
       this.position.lerp(this.remoteTargetPos, posAlpha);

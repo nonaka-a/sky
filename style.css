@@ -384,6 +384,130 @@ button {
   letter-spacing: 0.03em;
 }
 
+/* まいまいの吹き出し */
+.chat-bubble {
+  position: fixed;
+  left: 0;
+  top: 0;
+  max-width: 210px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  background: rgba(255, 252, 254, 0.96);
+  border: 2.5px solid #ff8da1;
+  box-shadow:
+    0 8px 20px rgba(82, 118, 150, 0.22),
+    0 2px 8px rgba(255, 122, 152, 0.22);
+  color: var(--color-text);
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.38;
+  word-break: break-word;
+  text-align: center;
+  pointer-events: none;
+  z-index: 8;
+  transform-origin: 10px 100%;
+  will-change: transform;
+}
+
+.chat-bubble::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  bottom: -10px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 10px 9px 0 3px;
+  border-color: #ff8da1 transparent transparent transparent;
+}
+
+.chat-bubble::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  bottom: -6px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 8px 7px 0 2px;
+  border-color: rgba(255, 252, 254, 0.98) transparent transparent transparent;
+}
+
+.chat-bubble.yellow {
+  border-color: #f3bd31;
+  box-shadow:
+    0 8px 20px rgba(82, 118, 150, 0.22),
+    0 2px 8px rgba(243, 189, 49, 0.26);
+}
+
+.chat-bubble.yellow::before {
+  border-color: #f3bd31 transparent transparent transparent;
+}
+
+/* 右下（おしゃべりの左）：ふきだしをけすボタン */
+.btn-chat-clear-hud {
+  position: absolute;
+  right: max(228px, calc(env(safe-area-inset-right) + 202px));
+  bottom: max(38px, calc(env(safe-area-inset-bottom) + 12px));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 252, 250, 0.94) 0%, rgba(255, 236, 228, 0.96) 100%);
+  color: #e06346;
+  border: 2.5px solid rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 8px 18px rgba(82, 118, 150, 0.22),
+    0 0 0 2px rgba(255, 178, 156, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.btn-chat-clear-hud:active {
+  transform: scale(0.92);
+}
+
+/* 右下（ジャンプの左）：チャットボタン */
+.btn-chat {
+  position: absolute;
+  right: max(144px, calc(env(safe-area-inset-right) + 118px));
+  bottom: max(32px, calc(env(safe-area-inset-bottom) + 6px));
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 253, 254, 0.94) 0%, rgba(255, 236, 244, 0.96) 100%);
+  color: #e6496b;
+  border: 2.5px solid rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 8px 20px rgba(82, 118, 150, 0.24),
+    0 0 0 2px rgba(255, 166, 196, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.btn-chat:active {
+  transform: scale(0.92);
+}
+
+.chat-btn-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
 /* 右下ジャンプボタン */
 .btn-jump {
   position: absolute;
@@ -677,6 +801,40 @@ button {
   gap: 10px;
 }
 
+/* チャット入力モーダル */
+.chat-input-wrap {
+  margin-bottom: 14px;
+}
+
+.chat-input {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 18px;
+  border: 2px solid #f7c7d4;
+  background: #ffffff;
+  font-family: var(--font-main);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-text);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.chat-input:focus {
+  border-color: #ff7a98;
+  box-shadow: 0 0 0 3px rgba(255, 122, 152, 0.2);
+}
+
+.chat-char-count {
+  margin-top: 6px;
+  text-align: right;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-text-soft);
+}
+
 /* 設定モーダル */
 .modal-title {
   margin: 0 0 16px;
@@ -783,6 +941,23 @@ button {
     height: 88px;
     right: 18px;
     bottom: 18px;
+  }
+  .btn-chat-clear-hud {
+    width: 46px;
+    height: 46px;
+    right: 190px;
+    bottom: 29px;
+  }
+  .btn-chat {
+    width: 62px;
+    height: 62px;
+    right: 118px;
+    bottom: 24px;
+  }
+  .chat-bubble {
+    max-width: 175px;
+    font-size: 12.5px;
+    padding: 7px 12px;
   }
   .btn-warp {
     right: 21px;

@@ -29,15 +29,23 @@ class Player {
     this.facingYaw = 0;
     this.isMoving = false;
 
+    // 計算用一時オブジェクト（GC抑制）
+    this._tmpVec1 = new THREE.Vector3();
+    this._tmpVec2 = new THREE.Vector3();
+    this._tmpAxisY = new THREE.Vector3(0, 1, 0);
+    this._tmpZAxis = new THREE.Vector3(0, 0, 1);
+    this._tmpQuat1 = new THREE.Quaternion();
+
     // ぽよん（Squash & Stretch）用スプリング
     this.squashY = 1.0;
     this.squashVel = 0;
 
-    // 表情管理
+    // 表情・吹き出し管理
     this.expression = 'normal';
     this.exprTimer = 0;
     this.blinkTimer = 2.5;
     this.isBlinking = false;
+    this.chatText = '';
 
     // 2段ジャンプエフェクト用リング管理
     this.jumpRings = [];
@@ -96,6 +104,11 @@ class Player {
       this.colorTheme = theme;
       this._drawFace(this.expression, this.isBlinking);
     }
+  }
+
+  setChatText(text) {
+    const clean = typeof text === 'string' ? [...text].slice(0, 20).join('') : '';
+    this.chatText = clean;
   }
 
   _drawFace(expr, blinking) {
@@ -259,7 +272,7 @@ class Player {
     this.groundCloud = null;
     this.isRidingPartner = false;
     this.airJumpsLeft = 1;
-    this.rollQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.facingYaw);
+    this.rollQuat.setFromAxisAngle(this._tmpAxisY, this.facingYaw);
     this.remoteTargetQuat.copy(this.rollQuat);
     this.triggerSquash(1.3);
     this.setExpression('happy', 0.6);
@@ -301,7 +314,7 @@ class Player {
           this.position.z + shadowInfo.normal.z * 0.04
         );
         this.dropShadow.quaternion.setFromUnitVectors(
-          new THREE.Vector3(0, 0, 1),
+          this._tmpZAxis,
           shadowInfo.normal
         );
         const s = Math.max(0.35, 1.0 - dist * 0.045);
@@ -352,18 +365,15 @@ class Player {
     }
 
     if (horizSpeed > 0.5 && this.isGrounded && !this.isRidingPartner) {
-      const moveDir = new THREE.Vector3(this.velocity.x, 0, this.velocity.z).normalize();
-      const rollAxis = new THREE.Vector3(0, 1, 0).cross(moveDir).normalize();
+      this._tmpVec1.set(this.velocity.x, 0, this.velocity.z).normalize();
+      this._tmpVec2.crossVectors(this._tmpAxisY, this._tmpVec1).normalize();
       const angle = (horizSpeed * dt) / this.radius;
-      const deltaQ = new THREE.Quaternion().setFromAxisAngle(rollAxis, angle);
-      this.rollQuat.premultiply(deltaQ).normalize();
+      this._tmpQuat1.setFromAxisAngle(this._tmpVec2, angle);
+      this.rollQuat.premultiply(this._tmpQuat1).normalize();
     } else {
-      const targetQuat = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0),
-        this.facingYaw
-      );
+      this._tmpQuat1.setFromAxisAngle(this._tmpAxisY, this.facingYaw);
       const recoverSpeed = this.isGrounded ? 10.0 : 5.5;
-      this.rollQuat.slerp(targetQuat, Math.min(1, recoverSpeed * dt));
+      this.rollQuat.slerp(this._tmpQuat1, Math.min(1, recoverSpeed * dt));
     }
 
     this.rollHolder.quaternion.copy(this.rollQuat);
@@ -380,6 +390,9 @@ class Player {
     this.isRidingPartner = !!state.rd;
     if (state.ex && this.expression !== state.ex) {
       this.setExpression(state.ex);
+    }
+    if (typeof state.ch === 'string') {
+      this.setChatText(state.ch);
     }
   }
 

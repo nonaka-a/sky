@@ -75,6 +75,14 @@
         </svg>
       </button>
 
+      <!-- まいまいの吹き出しレイヤー -->
+      <div id="local-chat-bubble" class="chat-bubble hidden" aria-live="polite">
+        <span id="local-chat-bubble-text" class="chat-bubble-text"></span>
+      </div>
+      <div id="remote-chat-bubble" class="chat-bubble hidden" aria-live="polite">
+        <span id="remote-chat-bubble-text" class="chat-bubble-text"></span>
+      </div>
+
       <!-- 右側（ジャンプの上）：仲間の近くへ飛ぶボタン -->
       <button id="btn-warp-partner" class="btn-warp hidden" aria-label="仲間の近くへ飛んでいく">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -83,6 +91,23 @@
           <path d="M23 11l-4-4m0 0l-4 4m4-4v9"/>
         </svg>
         <span class="warp-label">あいに行く</span>
+      </button>
+
+      <!-- 右下（おしゃべりの左）：ふきだしをけすボタン -->
+      <button id="btn-chat-clear" class="btn-chat-clear-hud hidden" aria-label="ふきだしをけす">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          <path d="M9.5 9.5l5 5"/>
+          <path d="M14.5 9.5l-5 5"/>
+        </svg>
+      </button>
+
+      <!-- 右下（ジャンプの左）：チャットボタン -->
+      <button id="btn-chat" class="btn-chat" aria-label="チャット">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+        </svg>
+        <span class="chat-btn-label">おしゃべり</span>
       </button>
 
       <!-- 右下：ジャンプボタン -->
@@ -203,6 +228,37 @@
       </div>
     </div>
 
+    <!-- チャット入力モーダル -->
+    <div id="chat-modal" class="overlay-screen hidden">
+      <div class="modal-card">
+        <div class="card-inner-frame">
+          <h2 class="modal-title">おしゃべり</h2>
+          <p class="join-desc">ふきだしに出すことばを入力してね</p>
+
+          <div class="chat-input-wrap">
+            <input
+              id="input-chat-text"
+              class="chat-input"
+              type="text"
+              maxlength="20"
+              placeholder="20もじまで入力できるよ"
+              autocomplete="off"
+            >
+            <div id="chat-char-count" class="chat-char-count">0 / 20</div>
+          </div>
+
+          <div class="join-actions">
+            <button id="btn-chat-send" class="btn-primary">
+              <span>ふきだしをだす</span>
+            </button>
+            <button id="btn-chat-cancel" class="btn-primary btn-close">
+              <span>もどる</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 設定モーダル -->
     <div id="settings-modal" class="overlay-screen hidden">
       <div class="modal-card">
@@ -258,13 +314,14 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/sound.js"></script>
-<script src="js/network.js"></script>
-<script src="js/player.js"></script>
-<script src="js/world.js"></script>
-<script src="js/controls.js"></script>
-<script src="js/main.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/npc.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/controls.js"></script>
+  <script src="js/main.js"></script>
 
 </body>
 </html>

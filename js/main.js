@@ -4,6 +4,7 @@ class MaimaiGame {
     this.hud = document.getElementById('hud');
     this.titleScreen = document.getElementById('title-screen');
     this.joinModal = document.getElementById('join-modal');
+    this.chatModal = document.getElementById('chat-modal');
     this.settingsModal = document.getElementById('settings-modal');
     this.respawnFlash = document.getElementById('respawn-flash');
     this.dialogueBox = document.getElementById('dialogue-box');
@@ -14,11 +15,21 @@ class MaimaiGame {
     this.roomPartnerStatus = document.getElementById('room-partner-status');
     this.toastBanner = document.getElementById('toast-banner');
     this.btnWarpPartner = document.getElementById('btn-warp-partner');
+    this.btnChat = document.getElementById('btn-chat');
+    this.btnChatClear = document.getElementById('btn-chat-clear');
     this.joystickKnob = document.getElementById('joystick-knob');
+
+    this.localBubble = document.getElementById('local-chat-bubble');
+    this.localBubbleText = document.getElementById('local-chat-bubble-text');
+    this.remoteBubble = document.getElementById('remote-chat-bubble');
+    this.remoteBubbleText = document.getElementById('remote-chat-bubble-text');
 
     this.inputRoomId = document.getElementById('input-room-id');
     this.joinErrorMsg = document.getElementById('join-error-msg');
     this.titleStatusMsg = document.getElementById('title-status-msg');
+
+    this.inputChatText = document.getElementById('input-chat-text');
+    this.chatCharCount = document.getElementById('chat-char-count');
 
     this.soundStatusEl = document.getElementById('sound-status');
     this.fullscreenStatusEl = document.getElementById('fullscreen-status');
@@ -40,13 +51,21 @@ class MaimaiGame {
     this.isTouchingHeart = false;
     this.dialogueTimer = 0;
 
+    // 計算用一時オブジェクト（GC抑制）
+    this._boundLoop = (t) => this._loop(t);
+    this._tmpForward = new THREE.Vector3();
+    this._tmpRight = new THREE.Vector3();
+    this._tmpWishDir = new THREE.Vector3();
+    this._tmpCamTarget = new THREE.Vector3();
+    this._tmpBubblePos = new THREE.Vector3();
+
     // Three.js 基本セットアップ
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
       powerPreference: 'high-performance'
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputEncoding = THREE.sRGBEncoding;
 
@@ -80,7 +99,7 @@ class MaimaiGame {
     this.world.updateChunks(this.player.position, 0.016);
     this._updateCamera(1.0);
 
-    requestAnimationFrame((t) => this._loop(t));
+    requestAnimationFrame(this._boundLoop);
   }
 
   _getRemoteSoundScale() {
@@ -109,7 +128,8 @@ class MaimaiGame {
       sq: this.player.squashY,
       ex: this.player.expression,
       g: this.player.isGrounded,
-      rd: this.player.isRidingPartner ? 1 : 0
+      rd: this.player.isRidingPartner ? 1 : 0,
+      ch: this.player.chatText
     };
     if (this.gameMode === 'host') {
       payload.wt = this.world.time;
@@ -134,6 +154,7 @@ class MaimaiGame {
           type: 'welcome',
           wt: this.world.time,
           hp: [this.player.position.x, this.player.position.y, this.player.position.z],
+          hc: this.player.chatText,
           heart: this.world.heartBuddy.getSyncState()
         });
       } else if (this.gameMode === 'guest') {
@@ -171,6 +192,9 @@ class MaimaiGame {
         if (this.remotePlayer && data.hp) {
           this.remotePlayer.position.set(data.hp[0], data.hp[1], data.hp[2]);
           this.remotePlayer.remoteTargetPos.set(data.hp[0], data.hp[1], data.hp[2]);
+          if (typeof data.hc === 'string') {
+            this.remotePlayer.setChatText(data.hc);
+          }
         }
       } else if (data.type === 'state') {
         if (this.remotePlayer) {
@@ -217,6 +241,7 @@ class MaimaiGame {
       this.remotePlayer = null;
     }
     this.remoteHeartState = null;
+    this.remoteBubble.classList.add('hidden');
   }
 
   _bindUI() {
@@ -225,6 +250,8 @@ class MaimaiGame {
     };
     stopProp(document.getElementById('btn-settings'));
     stopProp(this.btnWarpPartner);
+    stopProp(this.btnChat);
+    stopProp(this.btnChatClear);
     stopProp(this.roomBadge);
 
     document.getElementById('btn-start').addEventListener('click', (e) => {
@@ -309,6 +336,56 @@ class MaimaiGame {
       this._warpToPartner();
     });
 
+    // チャットボタン・消去ボタン・モーダル
+    this.btnChat.addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      if (!this.isPlaying || this.isPaused) return;
+      this.sound.playClick();
+      this.isPaused = true;
+      this.controls.reset();
+      this.inputChatText.value = '';
+      this._updateChatCounter();
+      this.chatModal.classList.remove('hidden');
+      setTimeout(() => this.inputChatText.focus(), 80);
+    });
+
+    this.btnChatClear.addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      if (!this.isPlaying || this.isPaused) return;
+      this.sound.playClick();
+      this.player.setChatText('');
+      this.btnChatClear.classList.add('hidden');
+      this._sendStatePacket();
+      this._updateChatBubbles();
+    });
+
+    this.inputChatText.addEventListener('input', () => {
+      const chars = [...this.inputChatText.value];
+      if (chars.length > 20) {
+        this.inputChatText.value = chars.slice(0, 20).join('');
+      }
+      this._updateChatCounter();
+    });
+
+    this.inputChatText.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        this._submitChat();
+      }
+    });
+
+    document.getElementById('btn-chat-send').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      this.sound.playClick();
+      this._submitChat();
+    });
+
+    document.getElementById('btn-chat-cancel').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      this.sound.playClick();
+      this._closeChatModal();
+    });
+
     document.getElementById('btn-settings').addEventListener('click', (e) => {
       e.currentTarget.blur();
       this.sound.playClick();
@@ -346,6 +423,30 @@ class MaimaiGame {
 
     document.addEventListener('fullscreenchange', () => this._syncFullscreenUI());
     document.addEventListener('webkitfullscreenchange', () => this._syncFullscreenUI());
+  }
+
+  _updateChatCounter() {
+    const len = [...this.inputChatText.value].length;
+    this.chatCharCount.textContent = `${len} / 20`;
+  }
+
+  _submitChat() {
+    const trimmed = this.inputChatText.value.trim();
+    if (!trimmed) {
+      this._closeChatModal();
+      return;
+    }
+    this.player.setChatText(trimmed);
+    this.btnChatClear.classList.remove('hidden');
+    this._sendStatePacket();
+    this._closeChatModal();
+    this._updateChatBubbles();
+  }
+
+  _closeChatModal() {
+    this.inputChatText.blur();
+    this.chatModal.classList.add('hidden');
+    this.isPaused = false;
   }
 
   _setTitleStatus(msg) {
@@ -435,6 +536,7 @@ class MaimaiGame {
     this.gameMode = mode;
     this.titleScreen.classList.add('hidden');
     this.joinModal.classList.add('hidden');
+    this.chatModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.hud.classList.remove('hidden');
     this.controls.reset();
@@ -444,6 +546,10 @@ class MaimaiGame {
 
     const isYellow = mode === 'guest';
     this.player.setColorTheme(isYellow ? 'yellow' : 'red');
+    this.player.setChatText('');
+    this.btnChatClear.classList.add('hidden');
+    this.localBubble.classList.add('hidden');
+    this.remoteBubble.classList.add('hidden');
     this.joystickKnob.classList.toggle('yellow', isYellow);
 
     if (mode === 'solo') {
@@ -483,11 +589,15 @@ class MaimaiGame {
 
     this.isPlaying = false;
     this.isPaused = false;
+    this.chatModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.hud.classList.add('hidden');
     this.roomBadge.classList.add('hidden');
     this.btnWarpPartner.classList.add('hidden');
+    this.btnChatClear.classList.add('hidden');
     this.toastBanner.classList.add('hidden');
+    this.localBubble.classList.add('hidden');
+    this.remoteBubble.classList.add('hidden');
     this.titleScreen.classList.remove('hidden');
     this.controls.reset();
     this._hideDialogue();
@@ -495,6 +605,7 @@ class MaimaiGame {
     this.rideCooldown = 0;
 
     this.player.setColorTheme('red');
+    this.player.setChatText('');
     this.joystickKnob.classList.remove('yellow');
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.world.heartBuddy.reset();
@@ -509,7 +620,7 @@ class MaimaiGame {
   }
 
   _loop(now) {
-    requestAnimationFrame((t) => this._loop(t));
+    requestAnimationFrame(this._boundLoop);
 
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
@@ -530,6 +641,7 @@ class MaimaiGame {
           this.remotePlayer.isRidingPartner ? this.player.position : null
         );
       }
+      this._updateChatBubbles();
     } else if (!this.isPlaying) {
       this.camYaw += dt * 0.18;
       this.world.updateChunks(this.player.position, dt);
@@ -645,10 +757,11 @@ class MaimaiGame {
         this.player.position.add(this.player.groundCloud.deltaPos);
       }
 
-      const forward = new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
-      const right = new THREE.Vector3(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
+      const forward = this._tmpForward.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
+      const right = this._tmpRight.set(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
 
-      const wishDir = new THREE.Vector3()
+      const wishDir = this._tmpWishDir
+        .set(0, 0, 0)
         .addScaledVector(right, move.x)
         .addScaledVector(forward, -move.y);
 
@@ -768,6 +881,51 @@ class MaimaiGame {
     }
 
     this._updateCamera(dt);
+    this._updateChatBubbles();
+  }
+
+  _updateChatBubbles() {
+    this.camera.updateMatrixWorld();
+    this._updateSingleBubble(this.player, this.localBubble, this.localBubbleText);
+    this._updateSingleBubble(this.remotePlayer, this.remoteBubble, this.remoteBubbleText);
+  }
+
+  _updateSingleBubble(playerObj, bubbleEl, textEl) {
+    if (!playerObj || !playerObj.chatText) {
+      bubbleEl.classList.add('hidden');
+      return;
+    }
+
+    this._tmpBubblePos.set(
+      playerObj.position.x,
+      playerObj.position.y + playerObj.radius + 0.3,
+      playerObj.position.z
+    );
+
+    const dist = this.camera.position.distanceTo(this._tmpBubblePos);
+    if (dist > 110) {
+      bubbleEl.classList.add('hidden');
+      return;
+    }
+
+    this._tmpBubblePos.applyMatrix4(this.camera.matrixWorldInverse);
+    if (this._tmpBubblePos.z >= -0.2) {
+      bubbleEl.classList.add('hidden');
+      return;
+    }
+
+    this._tmpBubblePos.applyMatrix4(this.camera.projectionMatrix);
+
+    const sx = (this._tmpBubblePos.x * 0.5 + 0.5) * window.innerWidth;
+    const sy = (-this._tmpBubblePos.y * 0.5 + 0.5) * window.innerHeight;
+    const scale = THREE.MathUtils.clamp(10.5 / Math.max(4, dist), 0.65, 1.05);
+
+    if (textEl.textContent !== playerObj.chatText) {
+      textEl.textContent = playerObj.chatText;
+    }
+    bubbleEl.classList.toggle('yellow', playerObj.colorTheme === 'yellow');
+    bubbleEl.classList.remove('hidden');
+    bubbleEl.style.transform = `translate3d(${sx + 16 * scale}px, ${sy - 10 * scale}px, 0) translate(0, -100%) scale(${scale})`;
   }
 
   _resolvePlayerInteraction(wasGrounded) {
@@ -961,12 +1119,12 @@ class MaimaiGame {
   }
 
   _updateCamera(dt) {
-    const target = new THREE.Vector3(
+    this._tmpCamTarget.set(
       this.player.position.x,
       this.player.position.y + 0.9,
       this.player.position.z
     );
-    this.camLookTarget.lerp(target, Math.min(1, dt * 10));
+    this.camLookTarget.lerp(this._tmpCamTarget, Math.min(1, dt * 10));
 
     const horizDist = Math.cos(this.camPitch) * this.camDist;
     const vertDist = Math.sin(this.camPitch) * this.camDist;

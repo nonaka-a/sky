@@ -23,7 +23,8 @@ class HeartBuddy {
     this._createVisuals();
 
     this.group.position.copy(centerPos);
-    this.group.scale.setScalar(1.05);
+    // 従来の1.05の80%サイズ
+    this.group.scale.setScalar(0.84);
   }
 
   setHomeCloud(cloud, immediate = false) {
@@ -45,7 +46,6 @@ class HeartBuddy {
   }
 
   _createVisuals() {
-    // 立体ハート形状
     const heartShape = new THREE.Shape();
     heartShape.moveTo(0, -0.78);
     heartShape.bezierCurveTo(-0.18, -0.64, -0.82, -0.22, -0.82, 0.30);
@@ -71,7 +71,6 @@ class HeartBuddy {
     const heightRange = maxY - minY || 1;
     const span = Math.max(size.x, size.y) * 1.04;
 
-    // 横から見た時に上はぷっくり丸く、下に向かって細くなるティアドロップ断面へ変形
     const rawPos = rawGeo.attributes.position;
     for (let i = 0; i < rawPos.count; i++) {
       const y = rawPos.getY(i);
@@ -81,7 +80,6 @@ class HeartBuddy {
       rawPos.setZ(i, z * zScale);
     }
 
-    // 前面(u: 0..0.5)と背面(u: 0.5..1.0)をシームレスに描き分けるためのUV再計算
     const heartGeo = rawGeo.toNonIndexed();
     heartGeo.computeVertexNormals();
     const posAttr = heartGeo.attributes.position;
@@ -107,7 +105,6 @@ class HeartBuddy {
     }
     heartGeo.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
 
-    // 前面＋背面用動的テクスチャ
     this.canvas = document.createElement('canvas');
     this.canvas.width = 1024;
     this.canvas.height = 512;
@@ -130,7 +127,6 @@ class HeartBuddy {
     heartOutline.scale.set(1.075, 1.075, 1.09);
     this.bodyGroup.add(heartOutline);
 
-    // 背中から生えるもこもこ3枚羽
     const wingShape = new THREE.Shape();
     wingShape.moveTo(0, -0.02);
     wingShape.bezierCurveTo(-0.18, 0.08, -0.45, 0.36, -0.78, 0.34);
@@ -152,7 +148,6 @@ class HeartBuddy {
 
     const wingMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    // 背中側（-Z）の左右に配置
     this.leftWingPivot = new THREE.Group();
     this.leftWingPivot.position.set(-0.22, -0.02, -0.35);
     const leftWing = new THREE.Mesh(wingGeo, wingMat);
@@ -299,8 +294,48 @@ class HeartBuddy {
     }
   }
 
+  getSyncState() {
+    return {
+      p: [this.group.position.x, this.group.position.y, this.group.position.z],
+      ry: this.group.rotation.y,
+      ex: this.expression
+    };
+  }
+
+  applySyncState(state, time, dt) {
+    if (!state) return;
+    const target = new THREE.Vector3(state.p[0], state.p[1], state.p[2]);
+    const alpha = 1 - Math.exp(-10 * dt);
+    if (this.group.position.distanceTo(target) > 20) {
+      this.group.position.copy(target);
+    } else {
+      this.group.position.lerp(target, alpha);
+    }
+
+    this.group.rotation.y = state.ry;
+    if (state.ex && this.expression !== state.ex) {
+      this.setExpression(state.ex);
+    }
+
+    const t = time * this.speed + this.phase;
+    this.bodyGroup.rotation.z = Math.sin(t * 2.1) * 0.1;
+    this.bodyGroup.rotation.x = Math.cos(t * 1.6) * 0.08;
+
+    const flap = Math.sin(time * 6.5 + this.phase * 2.0) * 0.42;
+    this.leftWingPivot.rotation.y = 0.35 + flap;
+    this.leftWingPivot.rotation.z = Math.sin(time * 6.5 + this.phase * 2.0) * 0.14;
+    this.rightWingPivot.rotation.y = -0.35 - flap;
+    this.rightWingPivot.rotation.z = -Math.sin(time * 6.5 + this.phase * 2.0) * 0.14;
+
+    this.blinkTimer -= dt;
+    if (this.blinkTimer <= 0) {
+      this.isBlinking = !this.isBlinking;
+      this.blinkTimer = this.isBlinking ? 0.11 : (2.4 + Math.random() * 2.8);
+      this._drawTexture(this.expression, this.isBlinking);
+    }
+  }
+
   update(time, dt, playerPos) {
-    // ホームに設定された大きい島雲の上空中心へ滑らかに追従
     if (this.homeCloud) {
       const targetX = this.homeCloud.position.x;
       const targetY = this.homeCloud.position.y + this.homeCloud.colliders[0].ry + 1.55;
@@ -311,7 +346,6 @@ class HeartBuddy {
       this.anchorPos.z = THREE.MathUtils.lerp(this.anchorPos.z, targetZ, lerpFactor);
     }
 
-    // 大きい雲の足場の上で触れやすい高さ・範囲をのんびり周回
     const t = time * this.speed + this.phase;
     const nx = this.anchorPos.x + Math.sin(t) * this.radiusX;
     const nz = this.anchorPos.z + Math.sin(t * 0.5) * this.radiusZ;
@@ -440,20 +474,28 @@ class SkyWorld {
     return n - Math.floor(n);
   }
 
+  syncTime(hostTime) {
+    if (typeof hostTime === 'number') {
+      if (Math.abs(hostTime - this.time) > 0.5) {
+        this.time = hostTime;
+      } else {
+        this.time = THREE.MathUtils.lerp(this.time, hostTime, 0.25);
+      }
+    }
+  }
+
   _assignHeartHomeCloud(playerPos) {
     let bestCloud = null;
     let bestScore = Infinity;
 
     for (const cloud of this.clouds) {
       if (cloud.type !== 'island') continue;
-      // 初回のハートちゃん専用島雲を最優先
       if (cloud.isHeartHome) {
         this.heartBuddy.setHomeCloud(cloud, this.heartBuddy.homeCloud === null);
         return;
       }
 
       const d = Math.hypot(cloud.position.x - playerPos.x, cloud.position.z - playerPos.z);
-      // プレイヤーから程よく離れた（35〜75付近の）大きい島雲を選ぶ
       const score = Math.abs(d - 50);
       if (d > 22 && score < bestScore) {
         bestScore = score;
@@ -466,7 +508,7 @@ class SkyWorld {
     }
   }
 
-  updateChunks(playerPos, dt) {
+  updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null) {
     this.time += dt;
     this.skyDome.position.copy(playerPos);
 
@@ -522,18 +564,20 @@ class SkyWorld {
       cloud.group.visible = cloud.visualScale > 0.03;
     }
 
-    // ハートちゃんのホーム雲が未設定または範囲外、あるいはプレイヤーが大きく離れた場合に別の大きい島雲へ更新
-    const home = this.heartBuddy.homeCloud;
-    const homeMissing = !home || !this.clouds.includes(home);
-    const tooFar = home
-      ? Math.hypot(playerPos.x - home.position.x, playerPos.z - home.position.z) > 120
-      : false;
+    if (isGuest && remoteHeartState) {
+      this.heartBuddy.applySyncState(remoteHeartState, this.time, dt);
+    } else {
+      const home = this.heartBuddy.homeCloud;
+      const homeMissing = !home || !this.clouds.includes(home);
+      const tooFar = home
+        ? Math.hypot(playerPos.x - home.position.x, playerPos.z - home.position.z) > 120
+        : false;
 
-    if (homeMissing || tooFar) {
-      this._assignHeartHomeCloud(playerPos);
+      if (homeMissing || tooFar) {
+        this._assignHeartHomeCloud(playerPos);
+      }
+      this.heartBuddy.update(this.time, dt, playerPos);
     }
-
-    this.heartBuddy.update(this.time, dt, playerPos);
   }
 
   _generateChunk(gx, gz, key) {
@@ -548,7 +592,6 @@ class SkyWorld {
       chunkClouds.push(this._createCloud(-14, 1.0, 8, 'normal', 5));
       chunkClouds.push(this._createCloud(0, 1.6, 16, 'bouncy', 6));
     } else if (gx === 0 && gz === -1) {
-      // ハートちゃんが飛び回る大きめの島雲と、そこへ渡るための中継雲を配置
       const heartIsland = this._createCloud(16, 1.5, -42, 'island', 77);
       heartIsland.isHeartHome = true;
       chunkClouds.push(heartIsland);

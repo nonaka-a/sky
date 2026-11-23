@@ -3,10 +3,22 @@ class MaimaiGame {
     this.canvas = document.getElementById('game-canvas');
     this.hud = document.getElementById('hud');
     this.titleScreen = document.getElementById('title-screen');
+    this.joinModal = document.getElementById('join-modal');
     this.settingsModal = document.getElementById('settings-modal');
     this.respawnFlash = document.getElementById('respawn-flash');
     this.dialogueBox = document.getElementById('dialogue-box');
     this.dialogueText = document.getElementById('dialogue-text');
+
+    this.roomBadge = document.getElementById('room-badge');
+    this.roomIdValue = document.getElementById('room-id-value');
+    this.roomPartnerStatus = document.getElementById('room-partner-status');
+    this.toastBanner = document.getElementById('toast-banner');
+    this.btnWarpPartner = document.getElementById('btn-warp-partner');
+    this.joystickKnob = document.getElementById('joystick-knob');
+
+    this.inputRoomId = document.getElementById('input-room-id');
+    this.joinErrorMsg = document.getElementById('join-error-msg');
+    this.titleStatusMsg = document.getElementById('title-status-msg');
 
     this.soundStatusEl = document.getElementById('sound-status');
     this.fullscreenStatusEl = document.getElementById('fullscreen-status');
@@ -14,6 +26,14 @@ class MaimaiGame {
     this.isPlaying = false;
     this.isPaused = false;
     this.isRespawning = false;
+
+    // 協力プレイ管理
+    this.gameMode = 'solo'; // 'solo' | 'host' | 'guest'
+    this.remotePlayer = null;
+    this.remoteHeartState = null;
+    this.netSendTimer = 0;
+    this.bumpCooldown = 0;
+    this.toastTimer = 0;
 
     // ハートちゃんふれあい状態
     this.isTouchingHeart = false;
@@ -38,7 +58,6 @@ class MaimaiGame {
       420
     );
 
-    // カメラ軌道パラメータ
     this.camYaw = 0;
     this.camPitch = 0.36;
     this.camDist = 10.5;
@@ -46,12 +65,14 @@ class MaimaiGame {
 
     // ゲームシステム初期化
     this.sound = new SoundManager();
+    this.network = new NetworkManager();
     this.world = new SkyWorld(this.scene);
-    this.player = new Player(this.scene);
+    this.player = new Player(this.scene, { colorTheme: 'red' });
     this.controls = new ControlsManager();
 
     this.lastTime = performance.now();
 
+    this._bindNetworkEvents();
     this._bindUI();
     window.addEventListener('resize', () => this._onResize());
 
@@ -61,26 +82,225 @@ class MaimaiGame {
     requestAnimationFrame((t) => this._loop(t));
   }
 
+  _getRemoteSoundScale() {
+    if (!this.remotePlayer) return 0;
+    const dist = this.player.position.distanceTo(this.remotePlayer.position);
+    if (dist > 75) return 0;
+    return THREE.MathUtils.clamp(1 - dist / 80, 0.18, 0.8);
+  }
+
+  _sendSe(name) {
+    if (this.network.isConnected) {
+      this.network.send({ type: 'se', name });
+    }
+  }
+
+  _bindNetworkEvents() {
+    this.network.onConnected = () => {
+      const partnerTheme = this.gameMode === 'host' ? 'yellow' : 'red';
+      this._spawnRemotePlayer(partnerTheme);
+
+      this.roomPartnerStatus.textContent = '2人プレイ中';
+      this.roomPartnerStatus.classList.add('online');
+      this.btnWarpPartner.classList.remove('hidden');
+
+      if (this.gameMode === 'host') {
+        this._showToast('きいろまいまいが遊びに来たよ！', 3.2);
+        this.sound.playHeartGreet();
+        this.network.send({
+          type: 'welcome',
+          wt: this.world.time,
+          hp: [this.player.position.x, this.player.position.y, this.player.position.z],
+          heart: this.world.heartBuddy.getSyncState()
+        });
+      } else if (this.gameMode === 'guest') {
+        this._showToast('あかまいまいと合流しました！', 3.0);
+        this.sound.playHeartGreet();
+      }
+    };
+
+    this.network.onDisconnected = () => {
+      this._removeRemotePlayer();
+      this.btnWarpPartner.classList.add('hidden');
+      this.roomPartnerStatus.textContent = 'あいてが退出しました';
+      this.roomPartnerStatus.classList.remove('online');
+
+      if (this.gameMode === 'guest' && this.isPlaying) {
+        this._showToast('ホストとの通信が切れました', 3.5);
+      } else if (this.gameMode === 'host' && this.isPlaying) {
+        this._showToast('きいろまいまいが退出しました', 3.0);
+      }
+    };
+
+    this.network.onData = (data) => {
+      if (!data || !data.type) return;
+
+      if (data.type === 'welcome' && this.gameMode === 'guest') {
+        this.world.syncTime(data.wt);
+        this.remoteHeartState = data.heart;
+        if (data.hp) {
+          const spawnPos = new THREE.Vector3(data.hp[0] + 1.4, data.hp[1] + 2.2, data.hp[2]);
+          this.world.updateChunks(spawnPos, 0.016, true, this.remoteHeartState);
+          this.player.resetTo(spawnPos);
+          this.player.safeFallbackPos.copy(spawnPos);
+        }
+        if (this.remotePlayer && data.hp) {
+          this.remotePlayer.position.set(data.hp[0], data.hp[1], data.hp[2]);
+          this.remotePlayer.remoteTargetPos.set(data.hp[0], data.hp[1], data.hp[2]);
+        }
+      } else if (data.type === 'state') {
+        if (this.remotePlayer) {
+          this.remotePlayer.applyRemoteState(data);
+        }
+        if (this.gameMode === 'guest') {
+          this.world.syncTime(data.wt);
+          if (data.heart) {
+            this.remoteHeartState = data.heart;
+          }
+        }
+      } else if (data.type === 'dj') {
+        if (this.remotePlayer) {
+          this.remotePlayer.spawnDoubleJumpRing();
+          const scale = this._getRemoteSoundScale();
+          if (scale > 0) this.sound.playDoubleJump(scale);
+        }
+      } else if (data.type === 'se') {
+        const scale = this._getRemoteSoundScale();
+        if (scale <= 0) return;
+        if (data.name === 'jump') this.sound.playJump(scale);
+        else if (data.name === 'bounce') this.sound.playBounce(scale);
+        else if (data.name === 'land') this.sound.playLand(scale);
+        else if (data.name === 'respawn') this.sound.playRespawn(scale);
+        else if (data.name === 'heart') this.sound.playHeartGreet(scale);
+      }
+    };
+  }
+
+  _spawnRemotePlayer(colorTheme) {
+    if (this.remotePlayer) {
+      this.remotePlayer.dispose();
+    }
+    this.remotePlayer = new Player(this.scene, {
+      colorTheme,
+      isRemote: true
+    });
+    this.remotePlayer.resetTo(this.player.position.clone().add(new THREE.Vector3(1.5, 1.0, 0)));
+  }
+
+  _removeRemotePlayer() {
+    if (this.remotePlayer) {
+      this.remotePlayer.dispose();
+      this.remotePlayer = null;
+    }
+    this.remoteHeartState = null;
+  }
+
   _bindUI() {
-    document.getElementById('btn-start').addEventListener('click', () => {
+    const stopProp = (el) => {
+      el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    };
+    stopProp(document.getElementById('btn-settings'));
+    stopProp(this.btnWarpPartner);
+    stopProp(this.roomBadge);
+
+    document.getElementById('btn-start').addEventListener('click', (e) => {
+      e.currentTarget.blur();
       this.sound.playClick();
       this.sound.startBgm();
-      this.startGame();
+      this.network.disconnect();
+      this.startGame('solo');
     });
 
-    document.getElementById('btn-settings').addEventListener('click', () => {
+    document.getElementById('btn-host-room').addEventListener('click', async (e) => {
+      e.currentTarget.blur();
+      this.sound.playClick();
+      this.sound.startBgm();
+      this._setTitleStatus('ルームを作成中…');
+      try {
+        const roomId = await this.network.hostRoom();
+        this._setTitleStatus('');
+        this.startGame('host', roomId);
+      } catch (err) {
+        this._setTitleStatus(err.message || 'ルームの作成に失敗しました');
+      }
+    });
+
+    document.getElementById('btn-open-join').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      this.sound.playClick();
+      this.joinErrorMsg.classList.add('hidden');
+      this.inputRoomId.value = '';
+      this.joinModal.classList.remove('hidden');
+      setTimeout(() => this.inputRoomId.focus(), 100);
+    });
+
+    document.getElementById('btn-join-cancel').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      this.sound.playClick();
+      this.joinModal.classList.add('hidden');
+    });
+
+    document.getElementById('btn-join-confirm').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.blur();
+      this.sound.playClick();
+      this.sound.startBgm();
+      btn.disabled = true;
+      this.joinErrorMsg.textContent = 'せつぞく中…';
+      this.joinErrorMsg.classList.remove('hidden');
+
+      try {
+        const roomId = await this.network.joinRoom(this.inputRoomId.value);
+        this.joinModal.classList.add('hidden');
+        this.joinErrorMsg.classList.add('hidden');
+        this.startGame('guest', roomId);
+      } catch (err) {
+        this.joinErrorMsg.textContent = err.message || '接続に失敗しました';
+        this.joinErrorMsg.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-copy-room').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      this.sound.playClick();
+      const id = this.roomIdValue.textContent;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(id).then(() => {
+          this._showToast(`ID「${id}」をコピーしました`, 2.2);
+        }).catch(() => {
+          this._showToast(`ID: ${id}`, 2.2);
+        });
+      } else {
+        this._showToast(`ID: ${id}`, 2.2);
+      }
+    });
+
+    this.btnWarpPartner.addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      if (!this.isPlaying || this.isPaused || !this.remotePlayer) return;
+      this.sound.playRespawn();
+      this._sendSe('respawn');
+      this._warpToPartner();
+    });
+
+    document.getElementById('btn-settings').addEventListener('click', (e) => {
+      e.currentTarget.blur();
       this.sound.playClick();
       this.isPaused = true;
       this.settingsModal.classList.remove('hidden');
     });
 
-    document.getElementById('btn-close-settings').addEventListener('click', () => {
+    document.getElementById('btn-close-settings').addEventListener('click', (e) => {
+      e.currentTarget.blur();
       this.sound.playClick();
       this.isPaused = false;
       this.settingsModal.classList.add('hidden');
     });
 
-    document.getElementById('btn-toggle-sound').addEventListener('click', () => {
+    document.getElementById('btn-toggle-sound').addEventListener('click', (e) => {
+      e.currentTarget.blur();
       const next = !this.sound.enabled;
       this.sound.setEnabled(next);
       if (next) this.sound.playClick();
@@ -88,18 +308,58 @@ class MaimaiGame {
       this.soundStatusEl.classList.toggle('on', next);
     });
 
-    document.getElementById('btn-toggle-fullscreen').addEventListener('click', () => {
+    document.getElementById('btn-toggle-fullscreen').addEventListener('click', (e) => {
+      e.currentTarget.blur();
       this.sound.playClick();
       this._toggleFullscreen();
     });
 
-    document.getElementById('btn-back-title').addEventListener('click', () => {
+    document.getElementById('btn-back-title').addEventListener('click', (e) => {
+      e.currentTarget.blur();
       this.sound.playClick();
       this.backToTitle();
     });
 
     document.addEventListener('fullscreenchange', () => this._syncFullscreenUI());
     document.addEventListener('webkitfullscreenchange', () => this._syncFullscreenUI());
+  }
+
+  _setTitleStatus(msg) {
+    if (!msg) {
+      this.titleStatusMsg.classList.add('hidden');
+      this.titleStatusMsg.textContent = '';
+    } else {
+      this.titleStatusMsg.textContent = msg;
+      this.titleStatusMsg.classList.remove('hidden');
+    }
+  }
+
+  _showToast(msg, duration = 2.6) {
+    this.toastBanner.textContent = msg;
+    this.toastBanner.classList.remove('hidden');
+    this.toastTimer = duration;
+  }
+
+  _warpToPartner() {
+    if (!this.remotePlayer) return;
+    this.respawnFlash.classList.add('active');
+    const target = this.remotePlayer.position.clone().add(new THREE.Vector3(0, 2.0, 0));
+
+    // ワープ先チャンクの雲を即座に生成
+    this.world.updateChunks(
+      target,
+      0.016,
+      this.gameMode === 'guest' && this.network.isConnected,
+      this.remoteHeartState
+    );
+
+    this.player.safeCloud = null;
+    this.player.safeFallbackPos.copy(target);
+    this.player.resetTo(target);
+    this.player.airJumpsLeft = 1;
+    setTimeout(() => {
+      this.respawnFlash.classList.remove('active');
+    }, 220);
   }
 
   _toggleFullscreen() {
@@ -148,13 +408,37 @@ class MaimaiGame {
     this.dialogueTimer = 0;
   }
 
-  startGame() {
+  startGame(mode = 'solo', roomId = '') {
+    this.gameMode = mode;
     this.titleScreen.classList.add('hidden');
+    this.joinModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.hud.classList.remove('hidden');
     this.controls.reset();
     this._hideDialogue();
     this.isTouchingHeart = false;
+
+    const isYellow = mode === 'guest';
+    this.player.setColorTheme(isYellow ? 'yellow' : 'red');
+    this.joystickKnob.classList.toggle('yellow', isYellow);
+
+    if (mode === 'solo') {
+      this.roomBadge.classList.add('hidden');
+      this.btnWarpPartner.classList.add('hidden');
+      this._removeRemotePlayer();
+    } else {
+      this.roomBadge.classList.remove('hidden');
+      this.roomIdValue.textContent = roomId;
+      if (mode === 'host') {
+        this.roomPartnerStatus.textContent = 'あいてをまっています…';
+        this.roomPartnerStatus.classList.remove('online');
+        this.btnWarpPartner.classList.add('hidden');
+      } else {
+        this.roomPartnerStatus.textContent = '2人プレイ中';
+        this.roomPartnerStatus.classList.add('online');
+        this.btnWarpPartner.classList.remove('hidden');
+      }
+    }
 
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.player.safeCloud = null;
@@ -169,15 +453,24 @@ class MaimaiGame {
   }
 
   backToTitle() {
+    this.network.disconnect();
+    this._removeRemotePlayer();
+    this.gameMode = 'solo';
+
     this.isPlaying = false;
     this.isPaused = false;
     this.settingsModal.classList.add('hidden');
     this.hud.classList.add('hidden');
+    this.roomBadge.classList.add('hidden');
+    this.btnWarpPartner.classList.add('hidden');
+    this.toastBanner.classList.add('hidden');
     this.titleScreen.classList.remove('hidden');
     this.controls.reset();
     this._hideDialogue();
     this.isTouchingHeart = false;
 
+    this.player.setColorTheme('red');
+    this.joystickKnob.classList.remove('yellow');
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.world.heartBuddy.reset();
   }
@@ -198,6 +491,16 @@ class MaimaiGame {
 
     if (this.isPlaying && !this.isPaused) {
       this._updateGame(dt);
+    } else if (this.isPlaying && this.isPaused) {
+      this._syncNetwork(dt);
+      if (this.remotePlayer) {
+        const rShadow = this.world.getShadowGroundInfo(
+          this.remotePlayer.position.x,
+          this.remotePlayer.position.y,
+          this.remotePlayer.position.z
+        );
+        this.remotePlayer.updateRemoteVisuals(dt, rShadow);
+      }
     } else if (!this.isPlaying) {
       this.camYaw += dt * 0.18;
       this.world.updateChunks(this.player.position, dt);
@@ -213,8 +516,33 @@ class MaimaiGame {
     this.renderer.render(this.scene, this.camera);
   }
 
+  _syncNetwork(dt) {
+    if (this.gameMode === 'solo' || !this.network.isConnected) return;
+
+    this.netSendTimer += dt;
+    if (this.netSendTimer >= 0.033) {
+      this.netSendTimer = 0;
+      const p = this.player.position;
+      const v = this.player.velocity;
+      const q = this.player.rollQuat;
+      const payload = {
+        type: 'state',
+        p: [p.x, p.y, p.z],
+        v: [v.x, v.y, v.z],
+        q: [q.x, q.y, q.z, q.w],
+        sq: this.player.squashY,
+        ex: this.player.expression,
+        g: this.player.isGrounded
+      };
+      if (this.gameMode === 'host') {
+        payload.wt = this.world.time;
+        payload.heart = this.world.heartBuddy.getSyncState();
+      }
+      this.network.send(payload);
+    }
+  }
+
   _updateGame(dt) {
-    // ダイアログ表示タイマー
     if (this.dialogueTimer > 0) {
       this.dialogueTimer -= dt;
       if (this.dialogueTimer <= 0) {
@@ -222,20 +550,32 @@ class MaimaiGame {
       }
     }
 
-    // カメラ視点操作の反映
+    if (this.toastTimer > 0) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) {
+        this.toastBanner.classList.add('hidden');
+      }
+    }
+
+    if (this.bumpCooldown > 0) {
+      this.bumpCooldown -= dt;
+    }
+
     const camD = this.controls.consumeCameraDelta();
     this.camYaw -= camD.x * 0.0055;
     this.camPitch = THREE.MathUtils.clamp(this.camPitch + camD.y * 0.0045, 0.08, 1.15);
 
-    // ワールドの雲を更新
-    this.world.updateChunks(this.player.position, dt);
+    this.world.updateChunks(
+      this.player.position,
+      dt,
+      this.gameMode === 'guest' && this.network.isConnected,
+      this.remoteHeartState
+    );
 
-    // 移動雲に乗っていれば一緒に運ぶ
     if (this.player.isGrounded && this.player.groundCloud) {
       this.player.position.add(this.player.groundCloud.deltaPos);
     }
 
-    // プレイヤー操作入力
     const move = this.controls.getMoveVector();
     const forward = new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     const right = new THREE.Vector3(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
@@ -266,7 +606,6 @@ class MaimaiGame {
       }
     }
 
-    // ジャンプ入力バッファ＆コヨーテタイム＆2段ジャンプ
     if (this.controls.consumeJump()) {
       this.player.jumpBufferTimer = 0.14;
     } else if (this.player.jumpBufferTimer > 0) {
@@ -290,6 +629,7 @@ class MaimaiGame {
         this.player.triggerSquash(1.38);
         this.player.setExpression('jump', 0.4);
         this.sound.playJump();
+        this._sendSe('jump');
       } else if (this.player.airJumpsLeft > 0) {
         this.player.velocity.y = 13.6;
         this.player.airJumpsLeft--;
@@ -298,24 +638,27 @@ class MaimaiGame {
         this.player.setExpression('happy', 0.45);
         this.player.spawnDoubleJumpRing();
         this.sound.playDoubleJump();
+        if (this.network.isConnected) {
+          this.network.send({ type: 'dj' });
+        }
       }
     }
 
-    // 重力
     this.player.velocity.y -= 32.0 * dt;
     this.player.velocity.y = Math.max(this.player.velocity.y, -28);
 
-    // 位置更新
     this.player.position.addScaledVector(this.player.velocity, dt);
 
-    // 雲とのカスタム楕円体衝突判定
     const wasGrounded = this.player.isGrounded;
     this.player.isGrounded = false;
     this.player.groundCloud = null;
 
     this._resolveCollisions(wasGrounded);
 
-    // ハートちゃんとの接触判定
+    if (this.remotePlayer) {
+      this._resolvePlayerInteraction(wasGrounded, dt);
+    }
+
     const heartDist = this.player.position.distanceTo(this.world.heartBuddy.group.position);
     if (heartDist < 2.4) {
       if (!this.isTouchingHeart) {
@@ -323,13 +666,13 @@ class MaimaiGame {
         this.world.heartBuddy.setExpression('happy', 3.5);
         this.player.setExpression('happy', 1.2);
         this.sound.playHeartGreet();
+        this._sendSe('heart');
         this._showDialogue('あ、まいまい！遊びに来てくれたの？', 4.5);
       }
     } else if (heartDist > 4.2) {
       this.isTouchingHeart = false;
     }
 
-    // 落下判定
     const safeY = this.player.safeCloud
       ? this.player.safeCloud.position.y + this.player.safeLocalOffset.y
       : this.player.safeFallbackPos.y;
@@ -344,7 +687,88 @@ class MaimaiGame {
       this.player.position.z
     );
     this.player.updateVisuals(dt, shadowInfo);
+
+    if (this.remotePlayer) {
+      const rShadow = this.world.getShadowGroundInfo(
+        this.remotePlayer.position.x,
+        this.remotePlayer.position.y,
+        this.remotePlayer.position.z
+      );
+      this.remotePlayer.updateRemoteVisuals(dt, rShadow);
+    }
+
+    this._syncNetwork(dt);
+
     this._updateCamera(dt);
+  }
+
+  _resolvePlayerInteraction(wasGrounded, dt) {
+    const p = this.player.position;
+    const rp = this.remotePlayer.position;
+
+    const dx = p.x - rp.x;
+    const dy = p.y - rp.y;
+    const dz = p.z - rp.z;
+    const dist = Math.hypot(dx, dy, dz);
+    const minDist = this.player.radius + this.remotePlayer.radius;
+
+    if (dist < minDist && dist > 0.0001) {
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const nz = dz / dist;
+      const penetration = minDist - dist;
+
+      if (ny > 0.52 && this.player.velocity.y <= 1.2) {
+        p.x += nx * penetration;
+        p.y += ny * penetration;
+        p.z += nz * penetration;
+
+        p.x += this.remotePlayer.velocity.x * dt * 0.7;
+        p.z += this.remotePlayer.velocity.z * dt * 0.7;
+
+        if (this.player.velocity.y < 0) {
+          this.player.velocity.y = 0;
+        }
+        this.player.isGrounded = true;
+        this.player.airJumpsLeft = 1;
+
+        if (!wasGrounded) {
+          this.player.triggerSquash(0.76);
+          this.sound.playLand();
+          this._sendSe('land');
+        }
+      } else {
+        p.x += nx * penetration * 0.65;
+        p.y += ny * penetration * 0.35;
+        p.z += nz * penetration * 0.65;
+
+        const vn =
+          this.player.velocity.x * nx +
+          this.player.velocity.y * ny +
+          this.player.velocity.z * nz;
+
+        if (vn < 0) {
+          this.player.velocity.x -= nx * vn;
+          this.player.velocity.y -= ny * vn;
+          this.player.velocity.z -= nz * vn;
+        }
+
+        const hLen = Math.hypot(nx, nz) || 1;
+        this.player.velocity.x += (nx / hLen) * 3.4;
+        this.player.velocity.z += (nz / hLen) * 3.4;
+
+        if (ny < -0.5 && this.player.velocity.y > 0) {
+          this.player.velocity.y = -1.2;
+        }
+
+        if (this.bumpCooldown <= 0) {
+          this.bumpCooldown = 0.28;
+          this.player.triggerSquash(0.82);
+          this.sound.playLand();
+          this._sendSe('land');
+        }
+      }
+    }
   }
 
   _resolveCollisions(wasGrounded) {
@@ -423,6 +847,7 @@ class MaimaiGame {
               this.player.triggerSquash(1.48);
               this.player.setExpression('happy', 0.55);
               this.sound.playBounce();
+              this._sendSe('bounce');
             } else {
               this.player.isGrounded = true;
               this.player.groundCloud = cloud;
@@ -432,6 +857,7 @@ class MaimaiGame {
                 this.player.triggerSquash(0.66);
                 this.player.setExpression('land', 0.25);
                 this.sound.playLand();
+                this._sendSe('land');
               }
 
               if (ny > 0.65) {
@@ -455,6 +881,7 @@ class MaimaiGame {
     this.isRespawning = true;
     this.respawnFlash.classList.add('active');
     this.sound.playRespawn();
+    this._sendSe('respawn');
 
     setTimeout(() => {
       let targetPos;

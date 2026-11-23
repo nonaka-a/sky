@@ -137,6 +137,98 @@ body.pseudo-fullscreen #game-container {
   box-shadow: 0 4px 12px rgba(214, 56, 91, 0.35);
 }
 
+.joystick-knob.yellow {
+  background: linear-gradient(180deg, #ffe259 0%, #f5b916 100%);
+  box-shadow: 0 4px 12px rgba(209, 146, 15, 0.35);
+}
+
+/* 左上：ルームIDバッジ */
+.room-badge {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  background: rgba(255, 252, 254, 0.88);
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: 20px;
+  padding: 8px 12px;
+  box-shadow: 0 8px 20px rgba(82, 118, 150, 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.room-badge-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.room-id-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  background: #4db8eb;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.room-id-value {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: var(--color-text);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.btn-copy-room {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #eff7fc;
+  color: #3599cf;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+
+.btn-copy-room:active {
+  transform: scale(0.9);
+}
+
+.room-partner-status {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-soft);
+}
+
+.room-partner-status.online {
+  color: #2f9e6e;
+}
+
+/* トースト通知 */
+.toast-banner {
+  position: absolute;
+  top: max(84px, calc(env(safe-area-inset-top) + 66px));
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 252, 254, 0.92);
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  padding: 8px 20px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--color-text);
+  box-shadow: 0 10px 24px rgba(82, 118, 150, 0.22);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  z-index: 19;
+  animation: dialoguePopIn 0.28s ease forwards;
+}
+
 /* ハートちゃんふれあいテキストウィンドウ */
 .dialogue-box {
   position: absolute;
@@ -256,6 +348,42 @@ button {
   transform: scale(0.93);
 }
 
+/* 仲間のもとへ飛ぶボタン（ジャンプボタンの上） */
+.btn-warp {
+  position: absolute;
+  right: max(30px, calc(env(safe-area-inset-right) + 4px));
+  bottom: max(142px, calc(env(safe-area-inset-bottom) + 116px));
+  width: 82px;
+  height: 62px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(114, 212, 255, 0.94) 0%, rgba(56, 168, 224, 0.96) 100%);
+  color: #ffffff;
+  border: 2.5px solid rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 8px 20px rgba(41, 147, 201, 0.3),
+    inset 0 2px 5px rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: transform 0.1s ease;
+}
+
+.btn-warp:active {
+  transform: scale(0.92);
+}
+
+.warp-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
 /* 右下ジャンプボタン */
 .btn-jump {
   position: absolute;
@@ -330,7 +458,7 @@ button {
 .card-inner-frame {
   border-radius: 26px;
   border: 1.5px solid rgba(235, 192, 99, 0.38);
-  padding: 26px 22px 24px;
+  padding: 24px 20px 22px;
   text-align: center;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 247, 251, 0.45) 100%);
 }
@@ -348,7 +476,7 @@ button {
 }
 
 .game-title {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   line-height: 1.18;
   font-weight: 900;
   display: flex;
@@ -357,24 +485,24 @@ button {
 }
 
 .title-aka {
-  font-size: 32px;
+  font-size: 30px;
   letter-spacing: 0.06em;
   color: #f0485c;
   text-shadow: 0 3px 0 #ffe3e7;
 }
 
 .title-sky {
-  font-size: 38px;
+  font-size: 36px;
   letter-spacing: 0.04em;
   color: #35a7e0;
   text-shadow: 0 3px 0 #dcf2ff;
 }
 
 .title-desc {
-  font-size: 13.5px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.65;
   color: var(--color-text-soft);
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   font-weight: 500;
 }
 
@@ -382,27 +510,27 @@ button {
 .controls-guide {
   background: rgba(255, 255, 255, 0.72);
   border-radius: 20px;
-  padding: 12px 14px;
-  margin-bottom: 22px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
   border: 1px solid rgba(220, 236, 248, 0.9);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 
 .guide-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-text);
   text-align: left;
 }
 
 .guide-badge {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -428,11 +556,11 @@ button {
 /* プライマリボタン */
 .btn-primary {
   width: 100%;
-  padding: 15px 24px;
+  padding: 14px 22px;
   border-radius: 999px;
   background: linear-gradient(180deg, #ff7a8f 0%, #f54e6b 100%);
   color: #ffffff;
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 800;
   letter-spacing: 0.08em;
   border: 2.5px solid #ffffff;
@@ -454,9 +582,104 @@ button {
   box-shadow: 0 5px 12px rgba(245, 78, 107, 0.28);
 }
 
+/* 協力プレイボタン */
+.coop-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.btn-coop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 10px;
+  border-radius: 20px;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 14px;
+  transition: transform 0.1s ease;
+}
+
+.btn-coop small {
+  font-size: 10.5px;
+  font-weight: 700;
+  opacity: 0.92;
+  margin-top: 2px;
+}
+
+.btn-coop:active {
+  transform: scale(0.96);
+}
+
+.btn-coop-host {
+  background: linear-gradient(180deg, #ff96b4 0%, #ef6291 100%);
+  box-shadow: 0 7px 16px rgba(239, 98, 145, 0.26);
+}
+
+.btn-coop-join {
+  background: linear-gradient(180deg, #ffd452 0%, #f0ae19 100%);
+  color: #5c3a14;
+  box-shadow: 0 7px 16px rgba(240, 174, 25, 0.26);
+}
+
+.title-status-msg {
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #3599cf;
+}
+
+/* ゲスト参加モーダル */
+.join-desc {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--color-text-soft);
+  margin: 0 0 16px;
+}
+
+.room-input {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 18px;
+  border: 2px solid #cbe6f7;
+  background: #ffffff;
+  font-family: var(--font-main);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-align: center;
+  color: var(--color-text);
+  outline: none;
+  margin-bottom: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.room-input:focus {
+  border-color: #4db8eb;
+  box-shadow: 0 0 0 3px rgba(77, 184, 235, 0.2);
+}
+
+.join-error-msg {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #d6385b;
+  margin-bottom: 12px;
+}
+
+.join-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 /* 設定モーダル */
 .modal-title {
-  margin: 0 0 18px;
+  margin: 0 0 16px;
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -561,6 +784,12 @@ button {
     right: 18px;
     bottom: 18px;
   }
+  .btn-warp {
+    right: 21px;
+    bottom: 120px;
+    width: 78px;
+    height: 56px;
+  }
   .joystick-base {
     width: 102px;
     height: 102px;
@@ -568,10 +797,10 @@ button {
     margin-top: -51px;
   }
   .title-aka {
-    font-size: 28px;
+    font-size: 26px;
   }
   .title-sky {
-    font-size: 33px;
+    font-size: 31px;
   }
   .dialogue-box {
     top: max(76px, calc(env(safe-area-inset-top) + 60px));

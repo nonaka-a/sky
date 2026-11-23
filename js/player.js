@@ -1,7 +1,9 @@
 class Player {
-  constructor(scene) {
+  constructor(scene, options = {}) {
     this.scene = scene;
     this.radius = 0.6;
+    this.colorTheme = options.colorTheme || 'red';
+    this.isRemote = !!options.isRemote;
 
     this.position = new THREE.Vector3(0, 4, 0);
     this.velocity = new THREE.Vector3(0, 0, 0);
@@ -10,6 +12,11 @@ class Player {
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.airJumpsLeft = 1; // 2段ジャンプ用
+
+    // リモート補間ターゲット
+    this.remoteTargetPos = new THREE.Vector3(0, 4, 0);
+    this.remoteTargetQuat = new THREE.Quaternion();
+    this.remoteTargetSquash = 1.0;
 
     // 最後に安全に着地していた情報
     this.safeCloud = null;
@@ -53,7 +60,7 @@ class Player {
 
     this._drawFace('normal', false);
 
-    // 赤い球体（本体表面はハイライト・陰影なしのフラット質感）
+    // 本体球体（ハイライト・陰影なしのフラット質感）
     const sphereGeo = new THREE.SphereGeometry(this.radius, 36, 36);
     const sphereMat = new THREE.MeshBasicMaterial({
       map: this.faceTexture
@@ -87,22 +94,30 @@ class Player {
     this.scene.add(this.dropShadow);
   }
 
+  setColorTheme(theme) {
+    if (this.colorTheme !== theme) {
+      this.colorTheme = theme;
+      this._drawFace(this.expression, this.isBlinking);
+    }
+  }
+
   _drawFace(expr, blinking) {
     const ctx = this.faceCtx;
     const w = 1024;
     const h = 512;
     ctx.clearRect(0, 0, w, h);
 
-    // ベースの赤（ハイライト・影なしのクリアな赤）
-    ctx.fillStyle = '#f23b3b';
+    const isYellow = this.colorTheme === 'yellow';
+
+    // ベース色（あかまいまい / きいろまいまい）
+    ctx.fillStyle = isYellow ? '#ffd32c' : '#f23b3b';
     ctx.fillRect(0, 0, w, h);
 
-    // 顔の基準座標（2:1キャンバス上で1:1スケール）
     const cx = w * 0.5;
     const cy = h * 0.49;
 
     // ほっぺ
-    ctx.fillStyle = 'rgba(255, 130, 150, 0.45)';
+    ctx.fillStyle = isYellow ? 'rgba(255, 128, 96, 0.52)' : 'rgba(255, 130, 150, 0.45)';
     ctx.beginPath();
     ctx.ellipse(cx - 82, cy + 20, 20, 11, 0, 0, Math.PI * 2);
     ctx.ellipse(cx + 82, cy + 20, 20, 11, 0, 0, Math.PI * 2);
@@ -171,25 +186,22 @@ class Player {
     ctx.lineCap = 'round';
 
     if (expr === 'fall') {
-      // おどろきの「○」口
-      ctx.fillStyle = '#5e1111';
+      ctx.fillStyle = isYellow ? '#b53424' : '#5e1111';
       ctx.beginPath();
       ctx.arc(cx, mouthY + 20, 22, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     } else if (expr === 'land') {
-      // むにゅ口
       ctx.beginPath();
       ctx.moveTo(cx - 32, mouthY + 10);
       ctx.quadraticCurveTo(cx - 16, mouthY + 24, cx, mouthY + 10);
       ctx.quadraticCurveTo(cx + 16, mouthY + 24, cx + 32, mouthY + 10);
       ctx.stroke();
     } else {
-      // 元気な笑顔の口
       const mouthW = expr === 'jump' || expr === 'happy' ? 66 : 58;
       const mouthH = expr === 'jump' || expr === 'happy' ? 38 : 32;
 
-      ctx.fillStyle = '#4a0b0b';
+      ctx.fillStyle = isYellow ? '#8f251b' : '#4a0b0b';
       ctx.beginPath();
       ctx.moveTo(cx - mouthW, mouthY);
       ctx.quadraticCurveTo(cx, mouthY + 10, cx + mouthW, mouthY);
@@ -199,10 +211,9 @@ class Player {
       ctx.fill();
       ctx.stroke();
 
-      // 口の中の舌風トーン
       ctx.save();
       ctx.clip();
-      ctx.fillStyle = '#8f1d1d';
+      ctx.fillStyle = isYellow ? '#d9483b' : '#8f1d1d';
       ctx.beginPath();
       ctx.ellipse(cx, mouthY + mouthH * 1.25, mouthW * 0.7, mouthH * 0.75, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -250,17 +261,18 @@ class Player {
 
   resetTo(pos) {
     this.position.copy(pos);
+    this.remoteTargetPos.copy(pos);
     this.velocity.set(0, 0, 0);
     this.isGrounded = false;
     this.groundCloud = null;
     this.airJumpsLeft = 1;
     this.rollQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.facingYaw);
+    this.remoteTargetQuat.copy(this.rollQuat);
     this.triggerSquash(1.3);
     this.setExpression('happy', 0.6);
   }
 
-  updateVisuals(dt, shadowInfo = null) {
-    // 2段ジャンプ雲リングのアニメーション更新
+  _updateRingsAndBlink(dt) {
     for (let i = this.jumpRings.length - 1; i >= 0; i--) {
       const ring = this.jumpRings[i];
       ring.age += dt;
@@ -277,15 +289,42 @@ class Player {
       }
     }
 
-    // 瞬きタイマー
     this.blinkTimer -= dt;
     if (this.blinkTimer <= 0) {
       this.isBlinking = !this.isBlinking;
       this.blinkTimer = this.isBlinking ? 0.11 : (2.2 + Math.random() * 2.5);
       this._drawFace(this.expression, this.isBlinking);
     }
+  }
 
-    // 時限表情の復帰
+  _updateDropShadow(shadowInfo) {
+    if (shadowInfo) {
+      const dist = Math.max(0, this.position.y - this.radius - shadowInfo.y);
+      if (dist < 18) {
+        this.dropShadow.visible = true;
+        this.dropShadow.position.set(
+          this.position.x + shadowInfo.normal.x * 0.04,
+          shadowInfo.y + shadowInfo.normal.y * 0.04,
+          this.position.z + shadowInfo.normal.z * 0.04
+        );
+        this.dropShadow.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          shadowInfo.normal
+        );
+        const s = Math.max(0.35, 1.0 - dist * 0.045);
+        this.dropShadow.scale.set(s, s, 1);
+        this.dropShadow.material.opacity = Math.max(0.04, 0.3 - dist * 0.016);
+      } else {
+        this.dropShadow.visible = false;
+      }
+    } else {
+      this.dropShadow.visible = false;
+    }
+  }
+
+  updateVisuals(dt, shadowInfo = null) {
+    this._updateRingsAndBlink(dt);
+
     if (this.exprTimer > 0) {
       this.exprTimer -= dt;
       if (this.exprTimer <= 0) {
@@ -312,11 +351,10 @@ class Player {
     const xzScale = 1 / Math.sqrt(this.squashY);
     this.bodyPivot.scale.set(xzScale, this.squashY, xzScale);
 
-    // 下側接地基準で潰れるように少し位置補正
     const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
     this.group.position.set(this.position.x, this.position.y + bottomOffset, this.position.z);
 
-    // 案A：移動時は物理的に転がり、停止時・ジャンプ時は顔が正面（進行方向）へ戻る
+    // 案A：移動時は物理的に転がり、停止時・ジャンプ時は顔が正面へ戻る
     const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     if (horizSpeed > 0.35) {
       this.facingYaw = Math.atan2(this.velocity.x, this.velocity.z);
@@ -338,29 +376,52 @@ class Player {
     }
 
     this.rollHolder.quaternion.copy(this.rollQuat);
+    this._updateDropShadow(shadowInfo);
+  }
 
-    // 雲に落ちる影の更新
-    if (shadowInfo) {
-      const dist = Math.max(0, this.position.y - this.radius - shadowInfo.y);
-      if (dist < 18) {
-        this.dropShadow.visible = true;
-        this.dropShadow.position.set(
-          this.position.x + shadowInfo.normal.x * 0.04,
-          shadowInfo.y + shadowInfo.normal.y * 0.04,
-          this.position.z + shadowInfo.normal.z * 0.04
-        );
-        this.dropShadow.quaternion.setFromUnitVectors(
-          new THREE.Vector3(0, 0, 1),
-          shadowInfo.normal
-        );
-        const s = Math.max(0.35, 1.0 - dist * 0.045);
-        this.dropShadow.scale.set(s, s, 1);
-        this.dropShadow.material.opacity = Math.max(0.04, 0.3 - dist * 0.016);
-      } else {
-        this.dropShadow.visible = false;
-      }
-    } else {
-      this.dropShadow.visible = false;
+  // 協力プレイ相手用の補間ビジュアル更新
+  applyRemoteState(state) {
+    if (!state) return;
+    this.remoteTargetPos.set(state.p[0], state.p[1], state.p[2]);
+    this.velocity.set(state.v[0], state.v[1], state.v[2]);
+    this.remoteTargetQuat.set(state.q[0], state.q[1], state.q[2], state.q[3]);
+    this.remoteTargetSquash = state.sq;
+    this.isGrounded = !!state.g;
+    if (state.ex && this.expression !== state.ex) {
+      this.setExpression(state.ex);
     }
+  }
+
+  updateRemoteVisuals(dt, shadowInfo = null) {
+    this._updateRingsAndBlink(dt);
+
+    const posAlpha = 1 - Math.exp(-18 * dt);
+    if (this.position.distanceTo(this.remoteTargetPos) > 12) {
+      this.position.copy(this.remoteTargetPos);
+    } else {
+      this.position.lerp(this.remoteTargetPos, posAlpha);
+    }
+
+    this.rollQuat.slerp(this.remoteTargetQuat, posAlpha);
+    this.squashY = THREE.MathUtils.lerp(this.squashY, this.remoteTargetSquash, posAlpha);
+
+    const xzScale = 1 / Math.sqrt(this.squashY);
+    this.bodyPivot.scale.set(xzScale, this.squashY, xzScale);
+
+    const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
+    this.group.position.set(this.position.x, this.position.y + bottomOffset, this.position.z);
+    this.rollHolder.quaternion.copy(this.rollQuat);
+    this._updateDropShadow(shadowInfo);
+  }
+
+  dispose() {
+    this.scene.remove(this.group);
+    this.scene.remove(this.dropShadow);
+    for (const ring of this.jumpRings) {
+      this.scene.remove(ring.mesh);
+      ring.mesh.geometry.dispose();
+      ring.mesh.material.dispose();
+    }
+    this.jumpRings = [];
   }
 }

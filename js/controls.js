@@ -27,7 +27,6 @@ class ControlsManager {
   }
 
   _preventIosZoom() {
-    // iPad / iOS Safari のダブルタップズーム・ピンチズーム抑止
     let lastTouchEnd = 0;
     document.addEventListener(
       'touchend',
@@ -134,8 +133,23 @@ class ControlsManager {
     this.btnJump.addEventListener('pointercancel', releaseJump);
     this.btnJump.addEventListener('pointerleave', releaseJump);
 
-    // PCキーボード併用
+    // PCキーボード併用（フォーカス中のボタンへのSpace誤作動を防止）
     window.addEventListener('keydown', (e) => {
+      const activeTag = document.activeElement ? document.activeElement.tagName : '';
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') {
+        return;
+      }
+
+      if (
+        e.code === 'Space' ||
+        e.code === 'ArrowUp' ||
+        e.code === 'ArrowDown' ||
+        e.code === 'ArrowLeft' ||
+        e.code === 'ArrowRight'
+      ) {
+        e.preventDefault();
+      }
+
       if (e.code === 'Space' && !this.keys[e.code]) {
         this.jumpRequested = true;
       }

@@ -30,7 +30,7 @@ class SoundManager {
   }
 
   playTone(freq, endFreq, duration, type = 'sine', volume = 0.15, delay = 0) {
-    if (!this.enabled || !this.ctx) return;
+    if (!this.enabled || !this.ctx || volume <= 0.001) return;
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
     }
@@ -56,40 +56,40 @@ class SoundManager {
     osc.stop(now + duration + 0.02);
   }
 
-  playJump() {
+  playJump(volScale = 1.0) {
     this.init();
-    this.playTone(320, 680, 0.18, 'sine', 0.16);
-    this.playTone(480, 820, 0.14, 'triangle', 0.08, 0.03);
+    this.playTone(320, 680, 0.18, 'sine', 0.16 * volScale);
+    this.playTone(480, 820, 0.14, 'triangle', 0.08 * volScale, 0.03);
   }
 
-  playDoubleJump() {
+  playDoubleJump(volScale = 1.0) {
     this.init();
-    this.playTone(460, 920, 0.17, 'sine', 0.15);
-    this.playTone(690, 1180, 0.15, 'triangle', 0.09, 0.04);
+    this.playTone(460, 920, 0.17, 'sine', 0.15 * volScale);
+    this.playTone(690, 1180, 0.15, 'triangle', 0.09 * volScale, 0.04);
   }
 
-  playBounce() {
+  playBounce(volScale = 1.0) {
     this.init();
-    this.playTone(260, 920, 0.28, 'sine', 0.18);
-    this.playTone(520, 1180, 0.22, 'triangle', 0.1, 0.04);
+    this.playTone(260, 920, 0.28, 'sine', 0.18 * volScale);
+    this.playTone(520, 1180, 0.22, 'triangle', 0.1 * volScale, 0.04);
   }
 
-  playLand() {
+  playLand(volScale = 1.0) {
     this.init();
-    this.playTone(220, 120, 0.1, 'sine', 0.1);
+    this.playTone(220, 120, 0.1, 'sine', 0.1 * volScale);
   }
 
-  playRespawn() {
+  playRespawn(volScale = 1.0) {
     this.init();
-    this.playTone(440, 587, 0.12, 'sine', 0.12, 0);
-    this.playTone(587, 880, 0.18, 'sine', 0.14, 0.09);
+    this.playTone(440, 587, 0.12, 'sine', 0.12 * volScale, 0);
+    this.playTone(587, 880, 0.18, 'sine', 0.14 * volScale, 0.09);
   }
 
-  playHeartGreet() {
+  playHeartGreet(volScale = 1.0) {
     this.init();
-    this.playTone(659.25, 659.25, 0.12, 'sine', 0.13, 0);
-    this.playTone(880.0, 880.0, 0.14, 'sine', 0.13, 0.08);
-    this.playTone(1046.5, 1046.5, 0.24, 'triangle', 0.12, 0.16);
+    this.playTone(659.25, 659.25, 0.12, 'sine', 0.13 * volScale, 0);
+    this.playTone(880.0, 880.0, 0.14, 'sine', 0.13 * volScale, 0.08);
+    this.playTone(1046.5, 1046.5, 0.24, 'triangle', 0.12 * volScale, 0.16);
   }
 
   playClick() {

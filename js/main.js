@@ -1139,6 +1139,29 @@ class MaimaiGame {
     const p = this.player.position;
     const r = this.player.radius;
 
+    const structHit = this.world.resolveStructureCollisions(p, this.player.velocity, r);
+    if (structHit.hitGround) {
+      this.player.isGrounded = true;
+      this.player.groundCloud = null;
+      this.player.airJumpsLeft = 1;
+
+      if (!wasGrounded && structHit.hardLandingVn < -4.5) {
+        this.player.triggerSquash(0.66);
+        this.player.setExpression('land', 0.25);
+        this.sound.playLand();
+        this._sendSe('land');
+      }
+
+      if (this.world.castleIsland) {
+        this.player.safeCloud = null;
+        this.player.safeFallbackPos.set(
+          this.world.castleIsland.position.x,
+          this.world.castleIsland.groundWorldY + r + 0.6,
+          this.world.castleIsland.position.z + 6.5
+        );
+      }
+    }
+
     for (const cloud of this.world.clouds) {
       if (Math.abs(cloud.position.x - p.x) > 28 || Math.abs(cloud.position.z - p.z) > 28) {
         continue;

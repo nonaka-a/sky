@@ -954,6 +954,25 @@ class StarBuddy {
     const p = this.position;
     const r = this.radius;
 
+    const structHit = world.resolveStructureCollisions(p, this.velocity, r);
+    if (structHit.hitGround) {
+      this.isGrounded = true;
+      this.groundCloud = null;
+
+      if (!wasGrounded && structHit.hardLandingVn < -4.0) {
+        this.triggerSquash(0.68);
+      }
+
+      if (world.castleIsland) {
+        this.safeCloud = null;
+        this.safeFallbackPos.set(
+          world.castleIsland.position.x,
+          world.castleIsland.groundWorldY + r + 0.5,
+          world.castleIsland.position.z + 6.5
+        );
+      }
+    }
+
     for (const cloud of world.clouds) {
       if (Math.abs(cloud.position.x - p.x) > 28 || Math.abs(cloud.position.z - p.z) > 28) {
         continue;

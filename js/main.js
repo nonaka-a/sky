@@ -8,7 +8,10 @@ class MaimaiGame {
     this.settingsModal = document.getElementById('settings-modal');
     this.respawnFlash = document.getElementById('respawn-flash');
     this.dialogueBox = document.getElementById('dialogue-box');
+    this.dialogueSpeaker = document.getElementById('dialogue-speaker');
     this.dialogueText = document.getElementById('dialogue-text');
+    this.dialogueAvatarHeart = document.getElementById('dialogue-avatar-heart');
+    this.dialogueAvatarStar = document.getElementById('dialogue-avatar-star');
 
     this.roomBadge = document.getElementById('room-badge');
     this.roomIdValue = document.getElementById('room-id-value');
@@ -42,13 +45,15 @@ class MaimaiGame {
     this.gameMode = 'solo'; // 'solo' | 'host' | 'guest'
     this.remotePlayer = null;
     this.remoteHeartState = null;
+    this.remoteStarState = null;
     this.netSendTimer = 0;
     this.bumpCooldown = 0;
     this.rideCooldown = 0;
     this.toastTimer = 0;
 
-    // ハートちゃんふれあい状態
+    // NPCふれあい状態
     this.isTouchingHeart = false;
+    this.isTouchingStar = false;
     this.dialogueTimer = 0;
 
     // 計算用一時オブジェクト（GC抑制）
@@ -134,6 +139,7 @@ class MaimaiGame {
     if (this.gameMode === 'host') {
       payload.wt = this.world.time;
       payload.heart = this.world.heartBuddy.getSyncState();
+      payload.star = this.world.starBuddy.getSyncState();
     }
     this.network.send(payload);
   }
@@ -155,7 +161,8 @@ class MaimaiGame {
           wt: this.world.time,
           hp: [this.player.position.x, this.player.position.y, this.player.position.z],
           hc: this.player.chatText,
-          heart: this.world.heartBuddy.getSyncState()
+          heart: this.world.heartBuddy.getSyncState(),
+          star: this.world.starBuddy.getSyncState()
         });
       } else if (this.gameMode === 'guest') {
         this._showToast('あかまいまいと合流しました！', 3.0);
@@ -183,9 +190,10 @@ class MaimaiGame {
       if (data.type === 'welcome' && this.gameMode === 'guest') {
         this.world.syncTime(data.wt);
         this.remoteHeartState = data.heart;
+        this.remoteStarState = data.star;
         if (data.hp) {
           const spawnPos = new THREE.Vector3(data.hp[0] + 1.4, data.hp[1] + 2.2, data.hp[2]);
-          this.world.updateChunks(spawnPos, 0.016, true, this.remoteHeartState);
+          this.world.updateChunks(spawnPos, 0.016, true, this.remoteHeartState, this.remoteStarState);
           this.player.resetTo(spawnPos);
           this.player.safeFallbackPos.copy(spawnPos);
         }
@@ -205,6 +213,9 @@ class MaimaiGame {
           if (data.heart) {
             this.remoteHeartState = data.heart;
           }
+          if (data.star) {
+            this.remoteStarState = data.star;
+          }
         }
       } else if (data.type === 'dj') {
         if (this.remotePlayer) {
@@ -220,6 +231,7 @@ class MaimaiGame {
         else if (data.name === 'land') this.sound.playLand(scale);
         else if (data.name === 'respawn') this.sound.playRespawn(scale);
         else if (data.name === 'heart') this.sound.playHeartGreet(scale);
+        else if (data.name === 'star') this.sound.playStarGreet(scale);
       }
     };
   }
@@ -241,6 +253,7 @@ class MaimaiGame {
       this.remotePlayer = null;
     }
     this.remoteHeartState = null;
+    this.remoteStarState = null;
     this.remoteBubble.classList.add('hidden');
   }
 
@@ -474,7 +487,8 @@ class MaimaiGame {
       target,
       0.016,
       this.gameMode === 'guest' && this.network.isConnected,
-      this.remoteHeartState
+      this.remoteHeartState,
+      this.remoteStarState
     );
 
     this.player.safeCloud = null;
@@ -521,7 +535,12 @@ class MaimaiGame {
     this._onResize();
   }
 
-  _showDialogue(message, duration = 4.5) {
+  _showDialogue(message, duration = 4.5, speaker = 'heart') {
+    const isStar = speaker === 'star';
+    this.dialogueBox.classList.toggle('star', isStar);
+    this.dialogueSpeaker.textContent = isStar ? 'スターくん' : 'ハートちゃん';
+    this.dialogueAvatarHeart.classList.toggle('hidden', isStar);
+    this.dialogueAvatarStar.classList.toggle('hidden', !isStar);
     this.dialogueText.textContent = message;
     this.dialogueBox.classList.remove('hidden');
     this.dialogueTimer = duration;
@@ -542,6 +561,7 @@ class MaimaiGame {
     this.controls.reset();
     this._hideDialogue();
     this.isTouchingHeart = false;
+    this.isTouchingStar = false;
     this.rideCooldown = 0;
 
     const isYellow = mode === 'guest';
@@ -575,6 +595,7 @@ class MaimaiGame {
     this.player.safeLocalOffset.set(0, 3.5, 0);
     this.player.safeFallbackPos.set(0, 4.5, 0);
     this.world.heartBuddy.reset();
+    this.world.starBuddy.reset();
     this.camYaw = 0;
     this.camPitch = 0.36;
 
@@ -602,6 +623,7 @@ class MaimaiGame {
     this.controls.reset();
     this._hideDialogue();
     this.isTouchingHeart = false;
+    this.isTouchingStar = false;
     this.rideCooldown = 0;
 
     this.player.setColorTheme('red');
@@ -609,6 +631,7 @@ class MaimaiGame {
     this.joystickKnob.classList.remove('yellow');
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.world.heartBuddy.reset();
+    this.world.starBuddy.reset();
   }
 
   _onResize() {
@@ -693,7 +716,8 @@ class MaimaiGame {
       this.player.position,
       dt,
       this.gameMode === 'guest' && this.network.isConnected,
-      this.remoteHeartState
+      this.remoteHeartState,
+      this.remoteStarState
     );
 
     const prevRiding = this.player.isRidingPartner;
@@ -852,10 +876,24 @@ class MaimaiGame {
         this.player.setExpression('happy', 1.2);
         this.sound.playHeartGreet();
         this._sendSe('heart');
-        this._showDialogue('あ、まいまい！遊びに来てくれたの？', 4.5);
+        this._showDialogue('あ、まいまい！遊びに来てくれたの？', 4.5, 'heart');
       }
     } else if (heartDist > 4.2) {
       this.isTouchingHeart = false;
+    }
+
+    const starDist = this.player.position.distanceTo(this.world.starBuddy.position);
+    if (starDist < 2.1) {
+      if (!this.isTouchingStar) {
+        this.isTouchingStar = true;
+        this.world.starBuddy.setExpression('happy', 3.5);
+        this.player.setExpression('happy', 1.2);
+        this.sound.playStarGreet();
+        this._sendSe('star');
+        this._showDialogue('やあ、まいまい！ボクと遊ぶ？', 4.5, 'star');
+      }
+    } else if (starDist > 3.8) {
+      this.isTouchingStar = false;
     }
 
     const safeY = this.player.safeCloud

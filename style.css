@@ -297,6 +297,26 @@ body.pseudo-fullscreen #game-container {
   color: var(--color-text);
 }
 
+.dialogue-box.star {
+  box-shadow:
+    0 14px 34px rgba(105, 134, 168, 0.24),
+    0 4px 14px rgba(245, 168, 36, 0.22);
+}
+
+.dialogue-box.star .dialogue-inner {
+  border-color: rgba(245, 198, 92, 0.52);
+  background: linear-gradient(135deg, rgba(255, 251, 236, 0.88) 0%, rgba(255, 255, 255, 0.78) 100%);
+}
+
+.dialogue-box.star .dialogue-avatar {
+  background: #fff4cc;
+  box-shadow: 0 3px 8px rgba(245, 168, 36, 0.2);
+}
+
+.dialogue-box.star .dialogue-speaker {
+  background: linear-gradient(90deg, #ffbe3d 0%, #f5941e 100%);
+}
+
 @keyframes dialoguePopIn {
   0% {
     opacity: 0;

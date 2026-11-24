@@ -97,6 +97,13 @@ class SoundManager {
     this.playTone(1046.5, 1046.5, 0.24, 'triangle', 0.12 * volScale, 0.16);
   }
 
+  playStarGreet(volScale = 1.0) {
+    this.init();
+    this.playTone(783.99, 783.99, 0.1, 'triangle', 0.12 * volScale, 0);
+    this.playTone(987.77, 987.77, 0.12, 'triangle', 0.12 * volScale, 0.07);
+    this.playTone(1318.51, 1318.51, 0.22, 'sine', 0.12 * volScale, 0.14);
+  }
+
   playClick() {
     this.init();
     this.playTone(620, 740, 0.07, 'triangle', 0.1);

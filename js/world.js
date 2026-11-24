@@ -22,9 +22,13 @@ class SkyWorld {
 
     this._createSkyEnvironment();
 
-    // ワールドに1人だけのハートちゃんを生成
+    // ワールドに1人だけのハートちゃんとスターくんを生成
     this.heartBuddy = new HeartBuddy(new THREE.Vector3(16, 5.5, -42));
     this.scene.add(this.heartBuddy.group);
+
+    this.starBuddy = new StarBuddy(new THREE.Vector3(4.2, 4.0, -5.2));
+    this.scene.add(this.starBuddy.group);
+    this.scene.add(this.starBuddy.dropShadow);
   }
 
   _createSkyEnvironment() {
@@ -110,7 +114,26 @@ class SkyWorld {
     }
   }
 
-  updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null) {
+  _assignStarHomeCloud(playerPos) {
+    let bestCloud = null;
+    let bestScore = Infinity;
+
+    for (const cloud of this.clouds) {
+      if (cloud.type === 'bouncy') continue;
+      const d = Math.hypot(cloud.position.x - playerPos.x, cloud.position.z - playerPos.z);
+      const score = Math.abs(d - 36);
+      if (d > 14 && score < bestScore) {
+        bestScore = score;
+        bestCloud = cloud;
+      }
+    }
+
+    if (bestCloud) {
+      this.starBuddy.placeOnCloud(bestCloud);
+    }
+  }
+
+  updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null, remoteStarState = null) {
     this.time += dt;
     this.skyDome.position.copy(playerPos);
 
@@ -179,6 +202,18 @@ class SkyWorld {
         this._assignHeartHomeCloud(playerPos);
       }
       this.heartBuddy.update(this.time, dt, playerPos);
+    }
+
+    if (isGuest && remoteStarState) {
+      this.starBuddy.applySyncState(remoteStarState, dt, this);
+    } else {
+      const starTooFar =
+        Math.hypot(playerPos.x - this.starBuddy.position.x, playerPos.z - this.starBuddy.position.z) > 110;
+      const safeMissing = this.starBuddy.safeCloud && !this.clouds.includes(this.starBuddy.safeCloud);
+      if (starTooFar || safeMissing) {
+        this._assignStarHomeCloud(playerPos);
+      }
+      this.starBuddy.update(dt, playerPos, this);
     }
   }
 

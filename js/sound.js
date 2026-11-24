@@ -104,6 +104,14 @@ class SoundManager {
     this.playTone(1318.51, 1318.51, 0.22, 'sine', 0.12 * volScale, 0.14);
   }
 
+  playStarWin(volScale = 1.0) {
+    this.init();
+    this.playTone(523.25, 523.25, 0.1, 'triangle', 0.12 * volScale, 0);
+    this.playTone(659.25, 659.25, 0.1, 'triangle', 0.12 * volScale, 0.08);
+    this.playTone(783.99, 783.99, 0.1, 'triangle', 0.12 * volScale, 0.16);
+    this.playTone(1046.5, 1046.5, 0.28, 'sine', 0.14 * volScale, 0.24);
+  }
+
   playClick() {
     this.init();
     this.playTone(620, 740, 0.07, 'triangle', 0.1);

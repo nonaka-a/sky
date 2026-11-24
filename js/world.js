@@ -26,7 +26,7 @@ class SkyWorld {
     this.heartBuddy = new HeartBuddy(new THREE.Vector3(16, 5.5, -42));
     this.scene.add(this.heartBuddy.group);
 
-    this.starBuddy = new StarBuddy(new THREE.Vector3(4.2, 4.0, -5.2));
+    this.starBuddy = new StarBuddy(new THREE.Vector3(15, 4.0, 4));
     this.scene.add(this.starBuddy.group);
     this.scene.add(this.starBuddy.dropShadow);
   }
@@ -133,7 +133,7 @@ class SkyWorld {
     }
   }
 
-  updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null, remoteStarState = null) {
+  updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null, remoteStarState = null, partnerPos = null) {
     this.time += dt;
     this.skyDome.position.copy(playerPos);
 
@@ -213,7 +213,7 @@ class SkyWorld {
       if (starTooFar || safeMissing) {
         this._assignStarHomeCloud(playerPos);
       }
-      this.starBuddy.update(dt, playerPos, this);
+      this.starBuddy.update(dt, playerPos, this, partnerPos);
     }
   }
 

@@ -406,6 +406,7 @@ class StarBuddy {
 
     this.isGrounded = false;
     this.groundCloud = null;
+    this.lastCloud = null;
     this.safeCloud = null;
     this.safeLocalOffset = new THREE.Vector3(0, 3.2, 0);
     this.safeFallbackPos = startPos.clone();
@@ -414,6 +415,11 @@ class StarBuddy {
     this.jumpWaitTimer = 0.6;
     this.squashY = 1.0;
     this.squashVel = 0;
+
+    // 鬼ごっこ状態: 'idle' | 'asking' | 'preparing' | 'chasing'
+    this.tagState = 'idle';
+    this.prepareTimer = 0;
+    this.onTagStarted = null;
 
     // 計算用一時オブジェクト（GC抑制）
     this._tmpSyncTarget = new THREE.Vector3();
@@ -439,6 +445,7 @@ class StarBuddy {
     this.velocity.set(0, 0, 0);
     this.isGrounded = false;
     this.groundCloud = null;
+    this.lastCloud = null;
     this.safeCloud = null;
     this.safeLocalOffset.set(0, 3.2, 0);
     this.safeFallbackPos.copy(this.initialPos);
@@ -446,6 +453,8 @@ class StarBuddy {
     this.jumpWaitTimer = 0.6;
     this.squashY = 1.0;
     this.squashVel = 0;
+    this.tagState = 'idle';
+    this.prepareTimer = 0;
     this.group.position.copy(this.initialPos);
     this.group.rotation.y = this.facingYaw;
     this.setExpression('normal');
@@ -679,12 +688,94 @@ class StarBuddy {
     this.group.position.copy(this.position);
   }
 
+  _launchToCloud(targetCloud, flightTime = null) {
+    const col = targetCloud.colliders[0];
+    const tx = targetCloud.position.x + col.offset.x;
+    const ty = targetCloud.position.y + col.offset.y + col.ry + this.radius + 0.2;
+    const tz = targetCloud.position.z + col.offset.z;
+
+    const horizDist = Math.hypot(tx - this.position.x, tz - this.position.z);
+    const T = flightTime || THREE.MathUtils.clamp(0.65 + horizDist * 0.025, 0.72, 1.32);
+
+    const vx = (tx - this.position.x) / T;
+    const vz = (tz - this.position.z) / T;
+    const vy = (ty - this.position.y + 0.5 * 28.0 * T * T) / T;
+
+    this.lastCloud = this.groundCloud;
+    this.velocity.set(vx, vy, vz);
+    this.facingYaw = Math.atan2(vx, vz);
+    this.isGrounded = false;
+    this.groundCloud = null;
+    this.triggerSquash(1.38);
+    this.setExpression('jump', 0.45);
+  }
+
+  startAsking() {
+    if (this.tagState === 'idle') {
+      this.tagState = 'asking';
+      this.setExpression('happy', 3.5);
+    }
+  }
+
+  cancelAsking() {
+    if (this.tagState === 'asking') {
+      this.tagState = 'idle';
+      this.jumpWaitTimer = 0.5;
+    }
+  }
+
+  startTagPrepare(playerPos, world) {
+    this.tagState = 'preparing';
+    this.prepareTimer = 0;
+    this.setExpression('happy', 2.0);
+
+    let bestCloud = null;
+    let bestScore = Infinity;
+
+    if (world) {
+      for (const c of world.clouds) {
+        if (c === this.groundCloud || c.type === 'bouncy') continue;
+        const dToPlayer = Math.hypot(c.position.x - playerPos.x, c.position.z - playerPos.z);
+        const dToStar = Math.hypot(c.position.x - this.position.x, c.position.z - this.position.z);
+        if (dToPlayer >= 14 && dToPlayer <= 28 && dToStar >= 9 && dToStar <= 30) {
+          const score = Math.abs(dToPlayer - 19);
+          if (score < bestScore) {
+            bestScore = score;
+            bestCloud = c;
+          }
+        }
+      }
+    }
+
+    if (bestCloud) {
+      this._launchToCloud(bestCloud, 1.12);
+    } else {
+      const yaw = Math.atan2(this.position.x - playerPos.x, this.position.z - playerPos.z);
+      this.facingYaw = yaw;
+      this.velocity.set(Math.sin(yaw) * 10.5, 13.5, Math.cos(yaw) * 10.5);
+      this.isGrounded = false;
+      this.groundCloud = null;
+      this.triggerSquash(1.4);
+    }
+  }
+
+  catchInTag() {
+    this.tagState = 'idle';
+    this.prepareTimer = 0;
+    this.jumpWaitTimer = 1.2;
+    this.velocity.set(0, 8.0, 0);
+    this.isGrounded = false;
+    this.triggerSquash(1.42);
+    this.setExpression('happy', 3.5);
+  }
+
   getSyncState() {
     return {
       p: [this.position.x, this.position.y, this.position.z],
       ry: this.group.rotation.y,
       sq: this.squashY,
-      ex: this.expression
+      ex: this.expression,
+      ts: this.tagState
     };
   }
 
@@ -739,6 +830,9 @@ class StarBuddy {
     if (state.ex && this.expression !== state.ex) {
       this.setExpression(state.ex);
     }
+    if (state.ts) {
+      this.tagState = state.ts;
+    }
 
     this._updateVisualCommon(dt, world);
   }
@@ -770,25 +864,18 @@ class StarBuddy {
           const cdx = c.position.x - this.position.x;
           const cdz = c.position.z - this.position.z;
           const cd = Math.hypot(cdx, cdz);
-          if (cd > 9 && cd < 19 && c.position.y - this.position.y < 3.5 && cd < nearDist) {
+          if (cd > 9 && cd < 20 && c.position.y - this.position.y < 3.5 && cd < nearDist) {
             nearDist = cd;
             nearCloud = c;
           }
         }
         if (nearCloud) {
-          this.facingYaw = Math.atan2(
-            nearCloud.position.x - this.position.x,
-            nearCloud.position.z - this.position.z
-          );
-          dirX = Math.sin(this.facingYaw);
-          dirZ = Math.cos(this.facingYaw);
-          horizSpeed = 6.8;
-          jumpVy = 13.5;
-        } else {
-          this.facingYaw = Math.random() * Math.PI * 2;
-          dirX = Math.sin(this.facingYaw);
-          dirZ = Math.cos(this.facingYaw);
+          this._launchToCloud(nearCloud);
+          return;
         }
+        this.facingYaw = Math.random() * Math.PI * 2;
+        dirX = Math.sin(this.facingYaw);
+        dirZ = Math.cos(this.facingYaw);
       } else {
         this.facingYaw += (Math.random() - 0.5) * 2.2;
         dirX = Math.sin(this.facingYaw);
@@ -803,6 +890,64 @@ class StarBuddy {
     this.groundCloud = null;
     this.triggerSquash(1.36);
     this.setExpression('jump', 0.45);
+  }
+
+  _performEscapeJump(world, threatPos) {
+    const threatDist = Math.hypot(this.position.x - threatPos.x, this.position.z - threatPos.z);
+
+    if (threatDist > 42) {
+      // 大きく離れたら現在いる雲の上で跳ねて待つ
+      this._performAiJump(world);
+      return;
+    }
+
+    let bestCloud = null;
+    let bestScore = -Infinity;
+
+    if (world) {
+      for (const c of world.clouds) {
+        if (c === this.groundCloud) continue;
+        const dStar = Math.hypot(c.position.x - this.position.x, c.position.z - this.position.z);
+        if (dStar < 7.5 || dStar > 23) continue;
+        if (c.position.y - this.position.y > 5.0) continue;
+
+        const dThreat = Math.hypot(c.position.x - threatPos.x, c.position.z - threatPos.z);
+        let score = dThreat - dStar * 0.2;
+        if (c === this.lastCloud) score -= 12;
+        if (dThreat > 44) score -= (dThreat - 44) * 1.5;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestCloud = c;
+        }
+      }
+    }
+
+    if (bestCloud) {
+      this._launchToCloud(bestCloud);
+      return;
+    }
+
+    // 周囲に適切な別雲がなければ、現在の雲上で脅威から離れる方向へジャンプ
+    let awayYaw = Math.atan2(this.position.x - threatPos.x, this.position.z - threatPos.z);
+    if (this.groundCloud) {
+      const cx = this.groundCloud.position.x;
+      const cz = this.groundCloud.position.z;
+      const distCenter = Math.hypot(this.position.x - cx, this.position.z - cz);
+      const cloudR = this.groundCloud.colliders[0].rx;
+      if (distCenter > cloudR * 0.55) {
+        awayYaw = Math.atan2(cx - this.position.x, cz - this.position.z) + (Math.random() - 0.5) * 1.1;
+      }
+    }
+
+    this.facingYaw = awayYaw;
+    this.velocity.x = Math.sin(awayYaw) * 6.2;
+    this.velocity.z = Math.cos(awayYaw) * 6.2;
+    this.velocity.y = 11.2;
+    this.isGrounded = false;
+    this.groundCloud = null;
+    this.triggerSquash(1.38);
+    this.setExpression('happy', 0.45);
   }
 
   _resolveCloudCollisions(world, wasGrounded) {
@@ -903,17 +1048,33 @@ class StarBuddy {
     }
   }
 
-  update(dt, playerPos, world) {
+  update(dt, playerPos, world, partnerPos = null) {
+    let threatPos = playerPos;
+    if (partnerPos) {
+      const d1 = this.position.distanceToSquared(playerPos);
+      const d2 = this.position.distanceToSquared(partnerPos);
+      if (d2 < d1) threatPos = partnerPos;
+    }
+
     if (this.isGrounded && this.groundCloud) {
       this.position.add(this.groundCloud.deltaPos);
       const decay = Math.exp(-16.0 * dt);
       this.velocity.x *= decay;
       this.velocity.z *= decay;
 
-      this.jumpWaitTimer -= dt;
-      if (this.jumpWaitTimer <= 0) {
-        this.jumpWaitTimer = 0.45 + Math.random() * 0.9;
-        this._performAiJump(world);
+      if (this.tagState === 'idle') {
+        this.jumpWaitTimer -= dt;
+        if (this.jumpWaitTimer <= 0) {
+          this.jumpWaitTimer = 0.45 + Math.random() * 0.9;
+          this._performAiJump(world);
+        }
+      } else if (this.tagState === 'chasing') {
+        this.jumpWaitTimer -= dt;
+        if (this.jumpWaitTimer <= 0) {
+          const td = Math.hypot(this.position.x - threatPos.x, this.position.z - threatPos.z);
+          this.jumpWaitTimer = td > 38 ? 0.65 : (td < 9 ? 0.06 : 0.16 + Math.random() * 0.16);
+          this._performEscapeJump(world, threatPos);
+        }
       }
     }
 
@@ -941,6 +1102,20 @@ class StarBuddy {
       this.triggerSquash(1.3);
     }
 
+    if (this.tagState === 'preparing') {
+      this.prepareTimer += dt;
+      const distReady = Math.hypot(this.position.x - threatPos.x, this.position.z - threatPos.z) >= 12.5;
+      if ((this.prepareTimer > 0.6 && this.isGrounded && distReady) || this.prepareTimer >= 2.2) {
+        this.tagState = 'chasing';
+        this.jumpWaitTimer = 0.35;
+        this.facingYaw = Math.atan2(threatPos.x - this.position.x, threatPos.z - this.position.z);
+        this.setExpression('happy', 1.6);
+        if (this.onTagStarted) {
+          this.onTagStarted();
+        }
+      }
+    }
+
     // 回転・ぽよんスプリング更新
     const k = 180;
     const damp = 14;
@@ -950,7 +1125,7 @@ class StarBuddy {
     this.squashY = THREE.MathUtils.clamp(this.squashY, 0.55, 1.5);
 
     const distPlayer = this.position.distanceTo(playerPos);
-    if (distPlayer < 6.0) {
+    if (this.tagState === 'asking' || (this.tagState === 'idle' && distPlayer < 6.0)) {
       const lookYaw = Math.atan2(playerPos.x - this.position.x, playerPos.z - this.position.z);
       const diff = Math.atan2(Math.sin(lookYaw - this.facingYaw), Math.cos(lookYaw - this.facingYaw));
       this.facingYaw += diff * Math.min(1, dt * 6);
@@ -962,7 +1137,7 @@ class StarBuddy {
       if (this.exprTimer <= 0) {
         this.setExpression('normal');
       }
-    } else if (distPlayer < 7.5) {
+    } else if (this.tagState === 'chasing' || distPlayer < 7.5) {
       this.setExpression('happy', 1.6);
     } else {
       this.moodTimer -= dt;

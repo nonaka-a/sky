@@ -317,6 +317,37 @@ body.pseudo-fullscreen #game-container {
   background: linear-gradient(90deg, #ffbe3d 0%, #f5941e 100%);
 }
 
+.dialogue-choices {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  pointer-events: auto;
+}
+
+.btn-dialogue-choice {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 10px rgba(105, 134, 168, 0.2);
+  transition: transform 0.1s ease;
+}
+
+.btn-dialogue-choice:active {
+  transform: scale(0.94);
+}
+
+.btn-choice-yes {
+  background: linear-gradient(180deg, #ffca45 0%, #f59b1d 100%);
+  color: #ffffff;
+}
+
+.btn-choice-no {
+  background: #edf3f8;
+  color: var(--color-text-soft);
+}
+
 @keyframes dialoguePopIn {
   0% {
     opacity: 0;

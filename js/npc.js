@@ -1071,8 +1071,7 @@ class StarBuddy {
       } else if (this.tagState === 'chasing') {
         this.jumpWaitTimer -= dt;
         if (this.jumpWaitTimer <= 0) {
-          const td = Math.hypot(this.position.x - threatPos.x, this.position.z - threatPos.z);
-          this.jumpWaitTimer = td > 38 ? 0.65 : (td < 9 ? 0.06 : 0.16 + Math.random() * 0.16);
+          this.jumpWaitTimer = 1.0;
           this._performEscapeJump(world, threatPos);
         }
       }
@@ -1087,6 +1086,10 @@ class StarBuddy {
     this.groundCloud = null;
 
     this._resolveCloudCollisions(world, wasGrounded);
+
+    if (!wasGrounded && this.isGrounded && this.tagState === 'chasing') {
+      this.jumpWaitTimer = 1.0;
+    }
 
     const safeY = this.safeCloud
       ? this.safeCloud.position.y + this.safeLocalOffset.y
@@ -1107,7 +1110,7 @@ class StarBuddy {
       const distReady = Math.hypot(this.position.x - threatPos.x, this.position.z - threatPos.z) >= 12.5;
       if ((this.prepareTimer > 0.6 && this.isGrounded && distReady) || this.prepareTimer >= 2.2) {
         this.tagState = 'chasing';
-        this.jumpWaitTimer = 0.35;
+        this.jumpWaitTimer = 1.0;
         this.facingYaw = Math.atan2(threatPos.x - this.position.x, threatPos.z - this.position.z);
         this.setExpression('happy', 1.6);
         if (this.onTagStarted) {

@@ -44,6 +44,12 @@ class MaimaiGame {
     this.isPaused = false;
     this.isRespawning = false;
 
+    // エリア管理（'sky' | 'castle'）
+    this.currentArea = 'sky';
+    this.remoteArea = 'sky';
+    this.isAreaTransitioning = false;
+    this.areaPortalCooldown = 0;
+
     // 協力プレイ管理
     this.gameMode = 'solo'; // 'solo' | 'host' | 'guest'
     this.remotePlayer = null;
@@ -96,6 +102,7 @@ class MaimaiGame {
     this.sound = new SoundManager();
     this.network = new NetworkManager();
     this.world = new SkyWorld(this.scene);
+    this.castleInterior = new CastleInterior();
     this.player = new Player(this.scene, { colorTheme: 'red' });
     this.controls = new ControlsManager();
 
@@ -120,8 +127,12 @@ class MaimaiGame {
     requestAnimationFrame(this._boundLoop);
   }
 
+  _getActiveScene() {
+    return this.currentArea === 'castle' ? this.castleInterior.scene : this.scene;
+  }
+
   _getRemoteSoundScale() {
-    if (!this.remotePlayer) return 0;
+    if (!this.remotePlayer || this.remoteArea !== this.currentArea) return 0;
     const dist = this.player.position.distanceTo(this.remotePlayer.position);
     if (dist > 75) return 0;
     return THREE.MathUtils.clamp(1 - dist / 80, 0.18, 0.8);
@@ -140,6 +151,7 @@ class MaimaiGame {
     const q = this.player.rollQuat;
     const payload = {
       type: 'state',
+      ar: this.currentArea,
       p: [p.x, p.y, p.z],
       v: [v.x, v.y, v.z],
       q: [q.x, q.y, q.z, q.w],
@@ -172,6 +184,7 @@ class MaimaiGame {
         this.network.send({
           type: 'welcome',
           wt: this.world.time,
+          ar: this.currentArea,
           hp: [this.player.position.x, this.player.position.y, this.player.position.z],
           hc: this.player.chatText,
           heart: this.world.heartBuddy.getSyncState(),
@@ -186,6 +199,7 @@ class MaimaiGame {
     this.network.onDisconnected = () => {
       this._removeRemotePlayer();
       this.player.isRidingPartner = false;
+      this.remoteArea = 'sky';
       this.btnWarpPartner.classList.add('hidden');
       this.roomPartnerStatus.textContent = 'あいてが退出しました';
       this.roomPartnerStatus.classList.remove('online');
@@ -204,12 +218,25 @@ class MaimaiGame {
         this.world.syncTime(data.wt);
         this.remoteHeartState = data.heart;
         this.remoteStarState = data.star;
-        if (data.hp) {
+        const hostArea = data.ar === 'castle' ? 'castle' : 'sky';
+        this.remoteArea = hostArea;
+
+        if (hostArea === 'castle') {
+          this.currentArea = 'castle';
+          this.player.setScene(this.castleInterior.scene);
+          if (this.remotePlayer) this.remotePlayer.setScene(this.castleInterior.scene);
+          const spawnPos = data.hp
+            ? new THREE.Vector3(data.hp[0] + 1.2, Math.max(0.6, data.hp[1]), data.hp[2] - 0.8)
+            : new THREE.Vector3(1.2, 0.6, 10.5);
+          this.player.resetTo(spawnPos);
+          this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
+        } else if (data.hp) {
           const spawnPos = new THREE.Vector3(data.hp[0] + 1.4, data.hp[1] + 2.2, data.hp[2]);
           this.world.updateChunks(spawnPos, 0.016, true, this.remoteHeartState, this.remoteStarState);
           this.player.resetTo(spawnPos);
           this.player.safeFallbackPos.copy(spawnPos);
         }
+
         if (this.remotePlayer && data.hp) {
           this.remotePlayer.position.set(data.hp[0], data.hp[1], data.hp[2]);
           this.remotePlayer.remoteTargetPos.set(data.hp[0], data.hp[1], data.hp[2]);
@@ -218,6 +245,9 @@ class MaimaiGame {
           }
         }
       } else if (data.type === 'state') {
+        if (data.ar) {
+          this.remoteArea = data.ar === 'castle' ? 'castle' : 'sky';
+        }
         if (this.remotePlayer) {
           this.remotePlayer.applyRemoteState(data);
         }
@@ -247,7 +277,7 @@ class MaimaiGame {
         if (data.se === 'star_win') this.sound.playStarWin();
         else if (data.se === 'star') this.sound.playStarGreet();
       } else if (data.type === 'dj') {
-        if (this.remotePlayer) {
+        if (this.remotePlayer && this.remoteArea === this.currentArea) {
           this.remotePlayer.spawnDoubleJumpRing();
           const scale = this._getRemoteSoundScale();
           if (scale > 0) this.sound.playDoubleJump(scale);
@@ -270,7 +300,7 @@ class MaimaiGame {
     if (this.remotePlayer) {
       this.remotePlayer.dispose();
     }
-    this.remotePlayer = new Player(this.scene, {
+    this.remotePlayer = new Player(this._getActiveScene(), {
       colorTheme,
       isRemote: true
     });
@@ -391,7 +421,7 @@ class MaimaiGame {
 
     this.btnWarpPartner.addEventListener('click', (e) => {
       e.currentTarget.blur();
-      if (!this.isPlaying || this.isPaused || !this.remotePlayer) return;
+      if (!this.isPlaying || this.isPaused || !this.remotePlayer || this.isAreaTransitioning) return;
       this.sound.playRespawn();
       this._sendSe('respawn');
       this._warpToPartner();
@@ -553,24 +583,132 @@ class MaimaiGame {
     this.toastTimer = duration;
   }
 
+  _enterCastleInterior() {
+    if (this.isAreaTransitioning || this.currentArea === 'castle') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.2;
+    this.player.isRidingPartner = false;
+    this.respawnFlash.classList.add('active');
+    this.sound.playRespawn();
+    this._sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'castle';
+      this.player.setScene(this.castleInterior.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.castleInterior.scene);
+      }
+
+      this.castleInterior.resetDoor();
+      const spawnPos = new THREE.Vector3(0, this.player.radius, 11.4);
+      this.player.facingYaw = Math.PI; // -Z方向（丸い床の中心方向）を向く
+      this.player.resetTo(spawnPos);
+      this.camYaw = Math.PI; // 扉とは反対（床中心側）からまいまいの正面を見る
+      this.camPitch = 0.24;
+      this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
+      this._updateCamera(1.0);
+      this.castleInterior.updateFloorVisibility(this.camera.position, this.camLookTarget);
+      this._sendStatePacket();
+
+      this.respawnFlash.classList.remove('active');
+      this.isAreaTransitioning = false;
+    }, 220);
+  }
+
+  _exitCastleInterior() {
+    if (this.isAreaTransitioning || this.currentArea === 'sky') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.2;
+    this.player.isRidingPartner = false;
+    this.respawnFlash.classList.add('active');
+    this.sound.playRespawn();
+    this._sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'sky';
+      this.player.setScene(this.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.scene);
+      }
+
+      const castlePos = this.world.castleIsland
+        ? this.world.castleIsland.position
+        : new THREE.Vector3(0, 3.5, -74);
+      const groundY = this.world.castleIsland
+        ? this.world.castleIsland.groundWorldY
+        : 4.7;
+
+      const exitPos = new THREE.Vector3(
+        castlePos.x,
+        groundY + this.player.radius,
+        castlePos.z + 2.6
+      );
+
+      this.world.updateChunks(
+        exitPos,
+        0.016,
+        this.gameMode === 'guest' && this.network.isConnected,
+        this.remoteHeartState,
+        this.remoteStarState,
+        this.remotePlayer && this.remoteArea === 'sky' ? this.remotePlayer.position : null
+      );
+
+      this.player.facingYaw = 0; // +Z方向（外の前庭方向）を向く
+      this.player.resetTo(exitPos);
+      this.player.safeCloud = null;
+      this.player.safeFallbackPos.copy(exitPos);
+      this.camYaw = 0; // お城と逆の前庭側からまいまいの正面を見る
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch, 0.08, 1.15);
+      this.camLookTarget.set(exitPos.x, exitPos.y + 0.9, exitPos.z);
+      this._updateCamera(1.0);
+      this._sendStatePacket();
+
+      this.respawnFlash.classList.remove('active');
+      this.isAreaTransitioning = false;
+    }, 220);
+  }
+
   _warpToPartner() {
     if (!this.remotePlayer) return;
     this.respawnFlash.classList.add('active');
-    const target = this.remotePlayer.position.clone().add(new THREE.Vector3(0, 2.0, 0));
 
-    this.world.updateChunks(
-      target,
-      0.016,
-      this.gameMode === 'guest' && this.network.isConnected,
-      this.remoteHeartState,
-      this.remoteStarState,
-      this.remotePlayer.position
-    );
+    if (this.remoteArea === 'castle') {
+      this.currentArea = 'castle';
+      this.player.setScene(this.castleInterior.scene);
+      this.remotePlayer.setScene(this.castleInterior.scene);
+      const rp = this.remotePlayer.position;
+      const clampedDist = Math.min(this.castleInterior.floorRadius - 2.0, Math.hypot(rp.x, rp.z));
+      const ang = Math.atan2(rp.z, rp.x);
+      const target = new THREE.Vector3(
+        Math.cos(ang) * clampedDist,
+        Math.max(this.player.radius, rp.y + 0.8),
+        Math.sin(ang) * clampedDist
+      );
+      this.player.resetTo(target);
+      this.camLookTarget.set(target.x, target.y + 0.9, target.z);
+    } else {
+      this.currentArea = 'sky';
+      this.player.setScene(this.scene);
+      this.remotePlayer.setScene(this.scene);
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch, 0.08, 1.15);
+      const target = this.remotePlayer.position.clone().add(new THREE.Vector3(0, 2.0, 0));
 
-    this.player.safeCloud = null;
-    this.player.safeFallbackPos.copy(target);
-    this.player.resetTo(target);
-    this.player.airJumpsLeft = 1;
+      this.world.updateChunks(
+        target,
+        0.016,
+        this.gameMode === 'guest' && this.network.isConnected,
+        this.remoteHeartState,
+        this.remoteStarState,
+        this.remotePlayer.position
+      );
+
+      this.player.safeCloud = null;
+      this.player.safeFallbackPos.copy(target);
+      this.player.resetTo(target);
+      this.player.airJumpsLeft = 1;
+    }
+
+    this._sendStatePacket();
     setTimeout(() => {
       this.respawnFlash.classList.remove('active');
     }, 220);
@@ -631,6 +769,11 @@ class MaimaiGame {
 
   startGame(mode = 'solo', roomId = '') {
     this.gameMode = mode;
+    this.currentArea = 'sky';
+    this.remoteArea = 'sky';
+    this.isAreaTransitioning = false;
+    this.areaPortalCooldown = 0;
+
     this.titleScreen.classList.add('hidden');
     this.joinModal.classList.add('hidden');
     this.chatModal.classList.add('hidden');
@@ -644,6 +787,7 @@ class MaimaiGame {
     this.rideCooldown = 0;
 
     const isYellow = mode === 'guest';
+    this.player.setScene(this.scene);
     this.player.setColorTheme(isYellow ? 'yellow' : 'red');
     this.player.setChatText('');
     this.btnChatClear.classList.add('hidden');
@@ -686,6 +830,10 @@ class MaimaiGame {
     this.network.disconnect();
     this._removeRemotePlayer();
     this.gameMode = 'solo';
+    this.currentArea = 'sky';
+    this.remoteArea = 'sky';
+    this.isAreaTransitioning = false;
+    this.areaPortalCooldown = 0;
 
     this.isPlaying = false;
     this.isPaused = false;
@@ -706,6 +854,7 @@ class MaimaiGame {
     this.isStarAsking = false;
     this.rideCooldown = 0;
 
+    this.player.setScene(this.scene);
     this.player.setColorTheme('red');
     this.player.setChatText('');
     this.joystickKnob.classList.remove('yellow');
@@ -722,6 +871,13 @@ class MaimaiGame {
     this.renderer.setSize(w, h);
   }
 
+  _getCurrentShadowInfo(px, py, pz) {
+    if (this.currentArea === 'castle') {
+      return this.castleInterior.getShadowGroundInfo(px, py, pz);
+    }
+    return this.world.getShadowGroundInfo(px, py, pz);
+  }
+
   _loop(now) {
     requestAnimationFrame(this._boundLoop);
 
@@ -732,8 +888,16 @@ class MaimaiGame {
       this._updateGame(dt);
     } else if (this.isPlaying && this.isPaused) {
       this._syncNetwork(dt);
+      const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
       if (this.remotePlayer) {
-        const rShadow = this.world.getShadowGroundInfo(
+        this.remotePlayer.group.visible = partnerHere;
+        if (!partnerHere) this.remotePlayer.dropShadow.visible = false;
+      }
+      if (this.currentArea === 'castle') {
+        this.castleInterior.updateFloorVisibility(this.camera.position, this.camLookTarget);
+      }
+      if (partnerHere) {
+        const rShadow = this._getCurrentShadowInfo(
           this.remotePlayer.position.x,
           this.remotePlayer.position.y,
           this.remotePlayer.position.z
@@ -743,6 +907,20 @@ class MaimaiGame {
           rShadow,
           this.remotePlayer.isRidingPartner ? this.player.position : null
         );
+      }
+      if (this.currentArea === 'castle') {
+        this.castleInterior.update(
+          dt,
+          this.player.position,
+          partnerHere ? this.remotePlayer.position : null,
+          this.player,
+          this.remotePlayer,
+          partnerHere
+        );
+        if (this.castleInterior.isFloorHidden) {
+          this.player.dropShadow.visible = false;
+          if (this.remotePlayer) this.remotePlayer.dropShadow.visible = false;
+        }
       }
       this._updateChatBubbles();
     } else if (!this.isPlaying) {
@@ -757,7 +935,7 @@ class MaimaiGame {
       this._updateCamera(dt);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this._getActiveScene(), this.camera);
   }
 
   _syncNetwork(dt) {
@@ -787,34 +965,52 @@ class MaimaiGame {
 
     if (this.bumpCooldown > 0) this.bumpCooldown -= dt;
     if (this.rideCooldown > 0) this.rideCooldown -= dt;
+    if (this.areaPortalCooldown > 0) this.areaPortalCooldown -= dt;
 
+    const minPitch = this.currentArea === 'castle' ? -0.78 : 0.08;
     const camD = this.controls.consumeCameraDelta();
     this.camYaw -= camD.x * 0.0055;
-    this.camPitch = THREE.MathUtils.clamp(this.camPitch + camD.y * 0.0045, 0.08, 1.15);
+    this.camPitch = THREE.MathUtils.clamp(this.camPitch + camD.y * 0.0045, minPitch, 1.15);
 
-    this.world.updateChunks(
-      this.player.position,
-      dt,
-      this.gameMode === 'guest' && this.network.isConnected,
-      this.remoteHeartState,
-      this.remoteStarState,
-      this.remotePlayer ? this.remotePlayer.position : null
-    );
+    const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
+
+    if (this.currentArea === 'sky') {
+      this.world.updateChunks(
+        this.player.position,
+        dt,
+        this.gameMode === 'guest' && this.network.isConnected,
+        this.remoteHeartState,
+        this.remoteStarState,
+        partnerHere ? this.remotePlayer.position : null
+      );
+    } else if (this.gameMode === 'host' && this.network.isConnected) {
+      // ホストが城内にいる間も、外にいるゲスト側向けにワールド時間・NPCを更新
+      const refPos = this.remotePlayer && this.remoteArea === 'sky'
+        ? this.remotePlayer.position
+        : this.world.castleIsland.position;
+      this.world.updateChunks(refPos, dt, false, null, null, null);
+    }
 
     const prevRiding = this.player.isRidingPartner;
 
-    // 相手プレイヤーの位置・ビジュアルを先に更新（頭上固定時は同期遅れを防ぐ）
+    // 相手プレイヤーの可視性・位置・ビジュアルを同期
     if (this.remotePlayer) {
-      const rShadow = this.world.getShadowGroundInfo(
-        this.remotePlayer.position.x,
-        this.remotePlayer.position.y,
-        this.remotePlayer.position.z
-      );
-      this.remotePlayer.updateRemoteVisuals(
-        dt,
-        rShadow,
-        this.remotePlayer.isRidingPartner ? this.player.position : null
-      );
+      this.remotePlayer.group.visible = partnerHere;
+      if (partnerHere) {
+        const rShadow = this._getCurrentShadowInfo(
+          this.remotePlayer.position.x,
+          this.remotePlayer.position.y,
+          this.remotePlayer.position.z
+        );
+        this.remotePlayer.updateRemoteVisuals(
+          dt,
+          rShadow,
+          this.remotePlayer.isRidingPartner ? this.player.position : null
+        );
+      } else {
+        this.remotePlayer.dropShadow.visible = false;
+        this.player.isRidingPartner = false;
+      }
     } else {
       this.player.isRidingPartner = false;
     }
@@ -829,7 +1025,7 @@ class MaimaiGame {
     }
 
     // 仲間の頭に乗っている間の固定処理
-    if (this.player.isRidingPartner && this.remotePlayer) {
+    if (this.player.isRidingPartner && partnerHere) {
       if (this.player.jumpBufferTimer > 0) {
         this.player.isRidingPartner = false;
         this.rideCooldown = 0.28;
@@ -858,7 +1054,7 @@ class MaimaiGame {
 
     // 通常移動・物理処理
     if (!this.player.isRidingPartner) {
-      if (this.player.isGrounded && this.player.groundCloud) {
+      if (this.currentArea === 'sky' && this.player.isGrounded && this.player.groundCloud) {
         this.player.position.add(this.player.groundCloud.deltaPos);
       }
 
@@ -932,16 +1128,33 @@ class MaimaiGame {
       this.player.isGrounded = false;
       this.player.groundCloud = null;
 
-      this._resolveCollisions(wasGrounded);
+      if (this.currentArea === 'castle') {
+        const hit = this.castleInterior.resolveCollisions(
+          this.player.position,
+          this.player.velocity,
+          this.player.radius
+        );
+        if (hit.hitGround) {
+          this.player.isGrounded = true;
+          this.player.airJumpsLeft = 1;
+          if (!wasGrounded && hit.hardLandingVn < -4.5) {
+            this.player.triggerSquash(0.66);
+            this.player.setExpression('land', 0.25);
+            this.sound.playLand();
+            this._sendSe('land');
+          }
+        }
+      } else {
+        this._resolveCollisions(wasGrounded);
+      }
 
-      if (this.remotePlayer) {
+      if (partnerHere) {
         this._resolvePlayerInteraction(wasGrounded);
       }
     }
 
-    // 自分の移動後に相手が自分の頭に乗っていた場合、即座に相手の見た目位置も追従させる
-    if (this.remotePlayer && this.remotePlayer.isRidingPartner) {
-      const rShadow = this.world.getShadowGroundInfo(
+    if (partnerHere && this.remotePlayer.isRidingPartner) {
+      const rShadow = this._getCurrentShadowInfo(
         this.remotePlayer.position.x,
         this.remotePlayer.position.y,
         this.remotePlayer.position.z
@@ -949,88 +1162,133 @@ class MaimaiGame {
       this.remotePlayer.updateRemoteVisuals(0, rShadow, this.player.position);
     }
 
-    const heartDist = this.player.position.distanceTo(this.world.heartBuddy.group.position);
-    if (heartDist < 2.4) {
-      if (!this.isTouchingHeart) {
-        this.isTouchingHeart = true;
-        this.isStarAsking = false;
-        this.world.starBuddy.cancelAsking();
-        this.world.heartBuddy.setExpression('happy', 3.5);
-        this.player.setExpression('happy', 1.2);
-        this.sound.playHeartGreet();
-        this._sendSe('heart');
-        this._showDialogue('あ、まいまい！遊びに来てくれたの？', 4.5, 'heart', false);
-      }
-    } else if (heartDist > 4.2) {
-      this.isTouchingHeart = false;
-    }
-
-    const starDist = this.player.position.distanceTo(this.world.starBuddy.position);
-    const starState = this.world.starBuddy.tagState;
-
-    if (starState === 'chasing') {
-      if (starDist < 2.15) {
-        if (this.gameMode === 'guest' && this.network.isConnected) {
-          this.isTouchingStar = true;
-          this.player.setExpression('happy', 1.5);
-          this.sound.playStarWin();
-          this._showDialogue('すごいね！まいまいのかち！', 4.5, 'star', false);
-          this.network.send({ type: 'star_tag', action: 'catch' });
-        } else {
-          this._finishStarTag(true);
-        }
-      }
-    } else if (starState !== 'preparing') {
-      if (starDist < 2.1) {
-        if (!this.isTouchingStar) {
-          this.isTouchingStar = true;
-          this.isStarAsking = true;
-          this.world.starBuddy.startAsking();
-          this.player.setExpression('happy', 1.2);
-          this.sound.playStarGreet();
-          this._sendSe('star');
-          this._showDialogue('やあ、まいまい！ボクと遊ぶ？', 0, 'star', true);
-        }
-      } else if (starDist > 4.2) {
-        this.isTouchingStar = false;
-        if (this.isStarAsking) {
+    if (this.currentArea === 'sky') {
+      const heartDist = this.player.position.distanceTo(this.world.heartBuddy.group.position);
+      if (heartDist < 2.4) {
+        if (!this.isTouchingHeart) {
+          this.isTouchingHeart = true;
           this.isStarAsking = false;
           this.world.starBuddy.cancelAsking();
-          this._hideDialogue();
+          this.world.heartBuddy.setExpression('happy', 3.5);
+          this.player.setExpression('happy', 1.2);
+          this.sound.playHeartGreet();
+          this._sendSe('heart');
+          this._showDialogue('あ、まいまい！遊びに来てくれたの？', 4.5, 'heart', false);
         }
+      } else if (heartDist > 4.2) {
+        this.isTouchingHeart = false;
+      }
+
+      const starDist = this.player.position.distanceTo(this.world.starBuddy.position);
+      const starState = this.world.starBuddy.tagState;
+
+      if (starState === 'chasing') {
+        if (starDist < 2.15) {
+          if (this.gameMode === 'guest' && this.network.isConnected) {
+            this.isTouchingStar = true;
+            this.player.setExpression('happy', 1.5);
+            this.sound.playStarWin();
+            this._showDialogue('すごいね！まいまいのかち！', 4.5, 'star', false);
+            this.network.send({ type: 'star_tag', action: 'catch' });
+          } else {
+            this._finishStarTag(true);
+          }
+        }
+      } else if (starState !== 'preparing') {
+        if (starDist < 2.1) {
+          if (!this.isTouchingStar) {
+            this.isTouchingStar = true;
+            this.isStarAsking = true;
+            this.world.starBuddy.startAsking();
+            this.player.setExpression('happy', 1.2);
+            this.sound.playStarGreet();
+            this._sendSe('star');
+            this._showDialogue('やあ、まいまい！ボクと遊ぶ？', 0, 'star', true);
+          }
+        } else if (starDist > 4.2) {
+          this.isTouchingStar = false;
+          if (this.isStarAsking) {
+            this.isStarAsking = false;
+            this.world.starBuddy.cancelAsking();
+            this._hideDialogue();
+          }
+        }
+      }
+
+      const safeY = this.player.safeCloud
+        ? this.player.safeCloud.position.y + this.player.safeLocalOffset.y
+        : this.player.safeFallbackPos.y;
+
+      if (!this.isRespawning && !this.player.isRidingPartner && this.player.position.y < Math.min(-18, safeY - 22)) {
+        this._respawn();
       }
     }
 
-    const safeY = this.player.safeCloud
-      ? this.player.safeCloud.position.y + this.player.safeLocalOffset.y
-      : this.player.safeFallbackPos.y;
-
-    if (!this.isRespawning && !this.player.isRidingPartner && this.player.position.y < Math.min(-18, safeY - 22)) {
-      this._respawn();
+    // カメラを先に確定させ、城内の床が手前に来て非表示になるか判定する
+    this._updateCamera(dt);
+    let floorHidden = false;
+    if (this.currentArea === 'castle') {
+      floorHidden = this.castleInterior.updateFloorVisibility(this.camera.position, this.camLookTarget);
     }
 
-    const shadowInfo = this.world.getShadowGroundInfo(
+    const shadowInfo = this._getCurrentShadowInfo(
       this.player.position.x,
       this.player.position.y,
       this.player.position.z
     );
-    this.player.updateVisuals(dt, shadowInfo);
+    this.player.updateVisuals(dt, floorHidden ? null : shadowInfo);
+    if (floorHidden && this.remotePlayer) {
+      this.remotePlayer.dropShadow.visible = false;
+    }
 
-    // 乗り降りが発生したフレームは即座に状態送信
+    // 城内空間の扉・反射更新とエリア行き来判定
+    if (this.currentArea === 'castle') {
+      this.castleInterior.update(
+        dt,
+        this.player.position,
+        partnerHere ? this.remotePlayer.position : null,
+        this.player,
+        this.remotePlayer,
+        partnerHere
+      );
+
+      if (
+        !this.isAreaTransitioning &&
+        this.areaPortalCooldown <= 0 &&
+        this.castleInterior.openAmount >= 0.55 &&
+        Math.abs(this.player.position.x) < 1.42 &&
+        this.player.position.z >= this.castleInterior.doorZ - 0.15
+      ) {
+        this._exitCastleInterior();
+      }
+    } else if (this.world.castleIsland && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
+      const ci = this.world.castleIsland;
+      const dx = this.player.position.x - ci.position.x;
+      const dz = this.player.position.z - ci.position.z;
+      const dy = this.player.position.y - ci.groundWorldY;
+      // お城の正面の扉（z = 0.62）をくぐった直後に異空間へ切り替え
+      if (ci.openAmount >= 0.55 && Math.abs(dx) < 1.45 && dz <= 0.1 && dz >= -1.8 && dy >= 0 && dy < 3.8) {
+        this._enterCastleInterior();
+      }
+    }
+
     if (prevRiding !== this.player.isRidingPartner) {
       this._sendStatePacket();
     } else {
       this._syncNetwork(dt);
     }
 
-    this._updateCamera(dt);
     this._updateChatBubbles();
   }
 
   _updateChatBubbles() {
     this.camera.updateMatrixWorld();
     this._updateSingleBubble(this.player, this.localBubble, this.localBubbleText);
-    this._updateSingleBubble(this.remotePlayer, this.remoteBubble, this.remoteBubbleText);
+    if (this.remotePlayer && this.remoteArea === this.currentArea) {
+      this._updateSingleBubble(this.remotePlayer, this.remoteBubble, this.remoteBubbleText);
+    } else {
+      this.remoteBubble.classList.add('hidden');
+    }
   }
 
   _updateSingleBubble(playerObj, bubbleEl, textEl) {

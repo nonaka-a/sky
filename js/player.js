@@ -427,6 +427,23 @@ class Player {
     this._updateDropShadow(shadowInfo);
   }
 
+  setScene(nextScene) {
+    if (!nextScene || this.scene === nextScene) return;
+    if (this.scene) {
+      this.scene.remove(this.group);
+      this.scene.remove(this.dropShadow);
+      for (const ring of this.jumpRings) {
+        this.scene.remove(ring.mesh);
+      }
+    }
+    this.scene = nextScene;
+    this.scene.add(this.group);
+    this.scene.add(this.dropShadow);
+    for (const ring of this.jumpRings) {
+      this.scene.add(ring.mesh);
+    }
+  }
+
   dispose() {
     this.scene.remove(this.group);
     this.scene.remove(this.dropShadow);

@@ -20,6 +20,8 @@ class MaimaiGame {
     this.roomIdValue = document.getElementById('room-id-value');
     this.roomPartnerStatus = document.getElementById('room-partner-status');
     this.toastBanner = document.getElementById('toast-banner');
+    this.sliderTimerEl = document.getElementById('slider-timer');
+    this.sliderTimerValueEl = document.getElementById('slider-timer-value');
     this.btnWarpPartner = document.getElementById('btn-warp-partner');
     this.btnChat = document.getElementById('btn-chat');
     this.btnChatClear = document.getElementById('btn-chat-clear');
@@ -44,7 +46,7 @@ class MaimaiGame {
     this.isPaused = false;
     this.isRespawning = false;
 
-    // エリア管理（'sky' | 'castle'）
+    // エリア管理（'sky' | 'castle' | 'mini_skySlider'）
     this.currentArea = 'sky';
     this.remoteArea = 'sky';
     this.isAreaTransitioning = false;
@@ -65,6 +67,10 @@ class MaimaiGame {
     this.isTouchingStar = false;
     this.isStarAsking = false;
     this.dialogueTimer = 0;
+
+    // スカイスライダー用カメラオフセット
+    this.sliderCamYawOffset = 0;
+    this.sliderCamPitchOffset = 0;
 
     // 計算用一時オブジェクト（GC抑制）
     this._boundLoop = (t) => this._loop(t);
@@ -103,6 +109,7 @@ class MaimaiGame {
     this.network = new NetworkManager();
     this.world = new SkyWorld(this.scene);
     this.castleInterior = new CastleInterior();
+    this.miniSkySlider = new MiniSkySlider();
     this.player = new Player(this.scene, { colorTheme: 'red' });
     this.controls = new ControlsManager();
 
@@ -128,7 +135,9 @@ class MaimaiGame {
   }
 
   _getActiveScene() {
-    return this.currentArea === 'castle' ? this.castleInterior.scene : this.scene;
+    if (this.currentArea === 'castle') return this.castleInterior.scene;
+    if (this.currentArea === 'mini_skySlider') return this.miniSkySlider.scene;
+    return this.scene;
   }
 
   _getRemoteSoundScale() {
@@ -218,11 +227,12 @@ class MaimaiGame {
         this.world.syncTime(data.wt);
         this.remoteHeartState = data.heart;
         this.remoteStarState = data.star;
-        const hostArea = data.ar === 'castle' ? 'castle' : 'sky';
+        const hostArea = data.ar === 'castle' ? 'castle' : (data.ar === 'mini_skySlider' ? 'mini_skySlider' : 'sky');
         this.remoteArea = hostArea;
 
         if (hostArea === 'castle') {
           this.currentArea = 'castle';
+          this.sliderTimerEl.classList.add('hidden');
           this.player.setScene(this.castleInterior.scene);
           if (this.remotePlayer) this.remotePlayer.setScene(this.castleInterior.scene);
           const spawnPos = data.hp
@@ -230,7 +240,17 @@ class MaimaiGame {
             : new THREE.Vector3(1.2, 0.6, 10.5);
           this.player.resetTo(spawnPos);
           this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
+        } else if (hostArea === 'mini_skySlider') {
+          this.currentArea = 'mini_skySlider';
+          this.sound.setBgmMode('mini_skySlider');
+          this.player.setScene(this.miniSkySlider.scene);
+          if (this.remotePlayer) this.remotePlayer.setScene(this.miniSkySlider.scene);
+          this.miniSkySlider.startNewRun(this.player);
+          this.sliderTimerEl.classList.remove('hidden');
+          this.sliderTimerEl.classList.remove('finished');
+          this.sliderTimerValueEl.textContent = '00:00.00';
         } else if (data.hp) {
+          this.sliderTimerEl.classList.add('hidden');
           const spawnPos = new THREE.Vector3(data.hp[0] + 1.4, data.hp[1] + 2.2, data.hp[2]);
           this.world.updateChunks(spawnPos, 0.016, true, this.remoteHeartState, this.remoteStarState);
           this.player.resetTo(spawnPos);
@@ -246,7 +266,7 @@ class MaimaiGame {
         }
       } else if (data.type === 'state') {
         if (data.ar) {
-          this.remoteArea = data.ar === 'castle' ? 'castle' : 'sky';
+          this.remoteArea = data.ar === 'castle' ? 'castle' : (data.ar === 'mini_skySlider' ? 'mini_skySlider' : 'sky');
         }
         if (this.remotePlayer) {
           this.remotePlayer.applyRemoteState(data);
@@ -506,6 +526,44 @@ class MaimaiGame {
       this._toggleFullscreen();
     });
 
+    const btnClearTimes = document.getElementById('btn-clear-slider-times');
+    const clearLabel = document.getElementById('clear-slider-label');
+    const clearBadge = document.getElementById('clear-slider-badge');
+    let clearConfirmTimer = null;
+    let clearConfirmArmed = false;
+
+    const resetClearButtonState = () => {
+      clearConfirmArmed = false;
+      if (clearConfirmTimer) {
+        clearTimeout(clearConfirmTimer);
+        clearConfirmTimer = null;
+      }
+      clearLabel.textContent = 'タイムきろくをけす';
+      clearBadge.textContent = 'RESET';
+      clearBadge.classList.remove('on');
+    };
+
+    btnClearTimes.addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      this.sound.playClick();
+      if (!clearConfirmArmed) {
+        clearConfirmArmed = true;
+        clearLabel.textContent = 'ほんとうにけす？';
+        clearBadge.textContent = 'もう1回';
+        clearBadge.classList.add('on');
+        clearConfirmTimer = setTimeout(resetClearButtonState, 3500);
+        return;
+      }
+      this.miniSkySlider.clearBestTimes();
+      resetClearButtonState();
+      this.isPaused = false;
+      this.settingsModal.classList.add('hidden');
+      this._showToast('タイムアタックのきろくをけしました', 2.8);
+    });
+
+    document.getElementById('btn-settings').addEventListener('click', resetClearButtonState);
+    document.getElementById('btn-close-settings').addEventListener('click', resetClearButtonState);
+
     document.getElementById('btn-back-title').addEventListener('click', (e) => {
       e.currentTarget.blur();
       this.sound.playClick();
@@ -594,6 +652,8 @@ class MaimaiGame {
 
     setTimeout(() => {
       this.currentArea = 'castle';
+      this.sound.setBgmMode('default');
+      this.sliderTimerEl.classList.add('hidden');
       this.player.setScene(this.castleInterior.scene);
       if (this.remotePlayer) {
         this.remotePlayer.setScene(this.castleInterior.scene);
@@ -626,6 +686,7 @@ class MaimaiGame {
 
     setTimeout(() => {
       this.currentArea = 'sky';
+      this.sliderTimerEl.classList.add('hidden');
       this.player.setScene(this.scene);
       if (this.remotePlayer) {
         this.remotePlayer.setScene(this.scene);
@@ -668,12 +729,90 @@ class MaimaiGame {
     }, 220);
   }
 
+  _enterMiniSkySlider() {
+    if (this.isAreaTransitioning || this.currentArea === 'mini_skySlider') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.2;
+    this.player.isRidingPartner = false;
+    this.respawnFlash.classList.add('active');
+    this.sound.playRespawn();
+    this._sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'mini_skySlider';
+      this.sound.setBgmMode('mini_skySlider');
+      this.player.setScene(this.miniSkySlider.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.miniSkySlider.scene);
+      }
+
+      this.sliderCamYawOffset = 0;
+      this.sliderCamPitchOffset = 0;
+      this.miniSkySlider.startNewRun(this.player);
+
+      this.sliderTimerEl.classList.remove('hidden');
+      this.sliderTimerEl.classList.remove('finished');
+      this.sliderTimerValueEl.textContent = '00:00.00';
+
+      this.camLookTarget.set(this.player.position.x, this.player.position.y + 0.9, this.player.position.z);
+      this.miniSkySlider.updateCamera(
+        this.camera,
+        this.camLookTarget,
+        this.player,
+        1.0,
+        this.sliderCamYawOffset,
+        this.sliderCamPitchOffset
+      );
+      this._sendStatePacket();
+
+      this.respawnFlash.classList.remove('active');
+      this.isAreaTransitioning = false;
+    }, 220);
+  }
+
+  _returnToCastleFromSlider() {
+    if (this.isAreaTransitioning || this.currentArea === 'castle') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.2;
+    this.player.isRidingPartner = false;
+    this.respawnFlash.classList.add('active');
+    this.sound.playRespawn();
+    this._sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'castle';
+      this.sound.setBgmMode('default');
+      this.sliderTimerEl.classList.add('hidden');
+      this.sliderTimerEl.classList.remove('finished');
+      this.player.setScene(this.castleInterior.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.castleInterior.scene);
+      }
+
+      // 城内のワープポータル前（上空から落ちてくる）
+      const spawnPos = new THREE.Vector3(0, 4.8, this.castleInterior.portalZ + 3.4);
+      this.player.facingYaw = 0; // +Z（城中心側）を向く
+      this.player.resetTo(spawnPos);
+      this.camYaw = 0;
+      this.camPitch = 0.24;
+      this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
+      this._updateCamera(1.0);
+      this.castleInterior.updateFloorVisibility(this.camera.position, this.camLookTarget);
+      this._sendStatePacket();
+
+      this.respawnFlash.classList.remove('active');
+      this.isAreaTransitioning = false;
+    }, 240);
+  }
+
   _warpToPartner() {
     if (!this.remotePlayer) return;
     this.respawnFlash.classList.add('active');
 
     if (this.remoteArea === 'castle') {
       this.currentArea = 'castle';
+      this.sound.setBgmMode('default');
+      this.sliderTimerEl.classList.add('hidden');
       this.player.setScene(this.castleInterior.scene);
       this.remotePlayer.setScene(this.castleInterior.scene);
       const rp = this.remotePlayer.position;
@@ -686,8 +825,22 @@ class MaimaiGame {
       );
       this.player.resetTo(target);
       this.camLookTarget.set(target.x, target.y + 0.9, target.z);
+    } else if (this.remoteArea === 'mini_skySlider') {
+      this.currentArea = 'mini_skySlider';
+      this.sound.setBgmMode('mini_skySlider');
+      this.player.setScene(this.miniSkySlider.scene);
+      this.remotePlayer.setScene(this.miniSkySlider.scene);
+      this.sliderCamYawOffset = 0;
+      this.sliderCamPitchOffset = 0;
+      this.miniSkySlider.warpToPartnerPosition(this.remotePlayer.position, this.player);
+      this.sliderTimerEl.classList.remove('hidden');
+      this.sliderTimerEl.classList.toggle('finished', this.miniSkySlider.timerFinished);
+      this.sliderTimerValueEl.textContent = this.miniSkySlider.formatTime(this.miniSkySlider.elapsedTime);
+      this.camLookTarget.set(this.player.position.x, this.player.position.y + 0.9, this.player.position.z);
     } else {
       this.currentArea = 'sky';
+      this.sound.setBgmMode('default');
+      this.sliderTimerEl.classList.add('hidden');
       this.player.setScene(this.scene);
       this.remotePlayer.setScene(this.scene);
       this.camPitch = THREE.MathUtils.clamp(this.camPitch, 0.08, 1.15);
@@ -771,6 +924,7 @@ class MaimaiGame {
     this.gameMode = mode;
     this.currentArea = 'sky';
     this.remoteArea = 'sky';
+    this.sound.setBgmMode('default');
     this.isAreaTransitioning = false;
     this.areaPortalCooldown = 0;
 
@@ -778,6 +932,7 @@ class MaimaiGame {
     this.joinModal.classList.add('hidden');
     this.chatModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
+    this.sliderTimerEl.classList.add('hidden');
     this.hud.classList.remove('hidden');
     this.controls.reset();
     this._hideDialogue();
@@ -832,6 +987,7 @@ class MaimaiGame {
     this.gameMode = 'solo';
     this.currentArea = 'sky';
     this.remoteArea = 'sky';
+    this.sound.setBgmMode('default');
     this.isAreaTransitioning = false;
     this.areaPortalCooldown = 0;
 
@@ -839,6 +995,7 @@ class MaimaiGame {
     this.isPaused = false;
     this.chatModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
+    this.sliderTimerEl.classList.add('hidden');
     this.hud.classList.add('hidden');
     this.roomBadge.classList.add('hidden');
     this.btnWarpPartner.classList.add('hidden');
@@ -874,6 +1031,9 @@ class MaimaiGame {
   _getCurrentShadowInfo(px, py, pz) {
     if (this.currentArea === 'castle') {
       return this.castleInterior.getShadowGroundInfo(px, py, pz);
+    }
+    if (this.currentArea === 'mini_skySlider') {
+      return this.miniSkySlider.getShadowGroundInfo(px, py, pz);
     }
     return this.world.getShadowGroundInfo(px, py, pz);
   }
@@ -967,12 +1127,84 @@ class MaimaiGame {
     if (this.rideCooldown > 0) this.rideCooldown -= dt;
     if (this.areaPortalCooldown > 0) this.areaPortalCooldown -= dt;
 
+    const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
+
+    // ホスト時は他エリアにいてもワールド側の時間とNPC同期を保つ
+    if (this.currentArea !== 'sky' && this.gameMode === 'host' && this.network.isConnected) {
+      const refPos = this.remotePlayer && this.remoteArea === 'sky'
+        ? this.remotePlayer.position
+        : this.world.castleIsland.position;
+      this.world.updateChunks(refPos, dt, false, null, null, null);
+    }
+
+    // ミニゲーム「スカイスライダー」専用更新ループ
+    if (this.currentArea === 'mini_skySlider') {
+      const camD = this.controls.consumeCameraDelta();
+      if (this.miniSkySlider.runState === 'goal_walk') {
+        this.sliderCamYawOffset -= camD.x * 0.0055;
+      } else {
+        this.sliderCamYawOffset = THREE.MathUtils.clamp(
+          this.sliderCamYawOffset - camD.x * 0.0055,
+          -1.6,
+          1.6
+        );
+      }
+      this.sliderCamPitchOffset = THREE.MathUtils.clamp(
+        this.sliderCamPitchOffset + camD.y * 0.0045,
+        -0.25,
+        0.75
+      );
+
+      if (this.remotePlayer) {
+        this.remotePlayer.group.visible = partnerHere;
+        if (partnerHere) {
+          const rShadow = this._getCurrentShadowInfo(
+            this.remotePlayer.position.x,
+            this.remotePlayer.position.y,
+            this.remotePlayer.position.z
+          );
+          this.remotePlayer.updateRemoteVisuals(dt, rShadow, null);
+        } else {
+          this.remotePlayer.dropShadow.visible = false;
+        }
+      }
+
+      const res = this.miniSkySlider.update(
+        dt,
+        this.player,
+        this.controls,
+        this.sound,
+        (name) => this._sendSe(name)
+      );
+
+      this.sliderTimerValueEl.textContent = this.miniSkySlider.formatTime(res.elapsedTime);
+      if (res.justFinished) {
+        this.sliderTimerEl.classList.add('finished');
+        this._showToast(`ゴール！ タイム ${this.miniSkySlider.formatTime(res.elapsedTime)}`, 3.5);
+      }
+
+      this.miniSkySlider.updateCamera(
+        this.camera,
+        this.camLookTarget,
+        this.player,
+        dt,
+        this.sliderCamYawOffset,
+        this.sliderCamPitchOffset
+      );
+
+      if ((res.courseOut || res.enteredGoalPortal) && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
+        this._returnToCastleFromSlider();
+      }
+
+      this._syncNetwork(dt);
+      this._updateChatBubbles();
+      return;
+    }
+
     const minPitch = this.currentArea === 'castle' ? -0.78 : 0.08;
     const camD = this.controls.consumeCameraDelta();
     this.camYaw -= camD.x * 0.0055;
     this.camPitch = THREE.MathUtils.clamp(this.camPitch + camD.y * 0.0045, minPitch, 1.15);
-
-    const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
 
     if (this.currentArea === 'sky') {
       this.world.updateChunks(
@@ -983,12 +1215,6 @@ class MaimaiGame {
         this.remoteStarState,
         partnerHere ? this.remotePlayer.position : null
       );
-    } else if (this.gameMode === 'host' && this.network.isConnected) {
-      // ホストが城内にいる間も、外にいるゲスト側向けにワールド時間・NPCを更新
-      const refPos = this.remotePlayer && this.remoteArea === 'sky'
-        ? this.remotePlayer.position
-        : this.world.castleIsland.position;
-      this.world.updateChunks(refPos, dt, false, null, null, null);
     }
 
     const prevRiding = this.player.isRidingPartner;
@@ -1241,7 +1467,7 @@ class MaimaiGame {
       this.remotePlayer.dropShadow.visible = false;
     }
 
-    // 城内空間の扉・反射更新とエリア行き来判定
+    // 城内空間の扉・ポータル・反射更新とエリア行き来判定
     if (this.currentArea === 'castle') {
       this.castleInterior.update(
         dt,
@@ -1260,6 +1486,12 @@ class MaimaiGame {
         this.player.position.z >= this.castleInterior.doorZ - 0.15
       ) {
         this._exitCastleInterior();
+      } else if (
+        !this.isAreaTransitioning &&
+        this.areaPortalCooldown <= 0 &&
+        this.castleInterior.isPlayerInPortal(this.player.position)
+      ) {
+        this._enterMiniSkySlider();
       }
     } else if (this.world.castleIsland && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
       const ci = this.world.castleIsland;

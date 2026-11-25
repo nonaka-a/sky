@@ -5,6 +5,27 @@ class SoundManager {
     this.bgmTimer = null;
     this.bgmStep = 0;
     this.isPlayingBgm = false;
+    this.bgmMode = 'default';
+    this.sliderBgmAudio = null;
+  }
+
+  _ensureSliderBgm() {
+    if (!this.sliderBgmAudio && typeof Audio !== 'undefined') {
+      this.sliderBgmAudio = new Audio('sounds/mini_skySlider_BGM.mp3');
+      this.sliderBgmAudio.loop = true;
+      this.sliderBgmAudio.volume = 0.42;
+    }
+    return this.sliderBgmAudio;
+  }
+
+  setBgmMode(mode) {
+    const nextMode = mode === 'mini_skySlider' ? 'mini_skySlider' : 'default';
+    if (this.bgmMode === nextMode) return;
+    this.bgmMode = nextMode;
+    if (this.isPlayingBgm && this.enabled) {
+      this.stopBgm();
+      this.startBgm();
+    }
   }
 
   init() {
@@ -118,9 +139,27 @@ class SoundManager {
   }
 
   startBgm() {
-    if (!this.enabled || this.isPlayingBgm) return;
+    if (!this.enabled) return;
     this.init();
     this.isPlayingBgm = true;
+
+    if (this.bgmMode === 'mini_skySlider') {
+      if (this.bgmTimer) {
+        clearInterval(this.bgmTimer);
+        this.bgmTimer = null;
+      }
+      const audio = this._ensureSliderBgm();
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+      return;
+    }
+
+    if (this.sliderBgmAudio) {
+      this.sliderBgmAudio.pause();
+    }
+    if (this.bgmTimer) return;
 
     const melody = [
       523.25, 0, 659.25, 783.99, 0, 659.25, 587.33, 523.25,
@@ -158,6 +197,10 @@ class SoundManager {
     if (this.bgmTimer) {
       clearInterval(this.bgmTimer);
       this.bgmTimer = null;
+    }
+    if (this.sliderBgmAudio) {
+      this.sliderBgmAudio.pause();
+      this.sliderBgmAudio.currentTime = 0;
     }
   }
 }

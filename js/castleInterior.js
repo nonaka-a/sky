@@ -5,6 +5,7 @@ class CastleInterior {
     this.time = 0;
 
     this.doorZ = 14.1;
+    this.portalZ = -11.6;
     this.openAmount = 0;
     this.doorOpenAngle = Math.PI * 0.58;
     this.isFloorHidden = false;
@@ -15,6 +16,7 @@ class CastleInterior {
     this._createDayNightSky();
     this._createMarbleFloor();
     this._createFloatingDoor();
+    this._createWarpPortal();
   }
 
   _createLighting() {
@@ -415,7 +417,7 @@ class CastleInterior {
     this.doorGroup.add(portalGlow);
 
     // 両開きの重厚な木の扉（内側 -Z 方向へ開く）
-    const doorWidth = 1.48;
+    const doorWidth = 1.47;
     const doorHeight = 3.56;
     const doorDepth = 0.22;
 
@@ -442,21 +444,30 @@ class CastleInterior {
 
       const createLeaf = (side) => {
         const pivot = new THREE.Group();
-        pivot.position.set(side * 1.49, 0, -0.14);
+        pivot.position.set(side * 1.485, 0, -0.14);
 
         const dir = -side;
         const leafGroup = new THREE.Group();
         leafGroup.position.set(dir * (doorWidth * 0.5), doorHeight * 0.5, 0);
         pivot.add(leafGroup);
 
-        leafGroup.add(new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, doorDepth), mDark));
-
         const frameThick = 0.14;
-        const topF = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, frameThick, doorDepth + 0.04), mFrame);
+
+        // 板本体を枠より内側に収めて側面・上下端でのZファイティングを防止
+        leafGroup.add(
+          new THREE.Mesh(
+            new THREE.BoxGeometry(doorWidth - frameThick * 1.8, doorHeight - frameThick * 2.0, doorDepth),
+            mDark
+          )
+        );
+
+        // 上下の横枠は左右縦枠の内側に収め、角の面重なりをなくす
+        const innerSpanW = doorWidth - frameThick * 2;
+        const topF = new THREE.Mesh(new THREE.BoxGeometry(innerSpanW, frameThick, doorDepth + 0.04), mFrame);
         topF.position.y = doorHeight * 0.5 - frameThick * 0.5;
         leafGroup.add(topF);
 
-        const botF = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, frameThick * 1.2, doorDepth + 0.04), mFrame);
+        const botF = new THREE.Mesh(new THREE.BoxGeometry(innerSpanW, frameThick * 1.2, doorDepth + 0.04), mFrame);
         botF.position.y = -doorHeight * 0.5 + frameThick * 0.6;
         leafGroup.add(botF);
 
@@ -469,7 +480,7 @@ class CastleInterior {
         leafGroup.add(innerS);
 
         for (const by of [-0.88, 0.82]) {
-          const strap = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 0.06, 0.18, doorDepth + 0.06), mBelt);
+          const strap = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 0.04, 0.18, doorDepth + 0.06), mBelt);
           strap.position.y = by;
           leafGroup.add(strap);
         }
@@ -526,6 +537,107 @@ class CastleInterior {
     const reflLeaves = buildDoorPair(this.doorReflectGroup, true);
     this.reflLeftDoorPivot = reflLeaves.left;
     this.reflRightDoorPivot = reflLeaves.right;
+  }
+
+  _createWarpPortal() {
+    // 扉と反対側（z = -11.6）に浮く軽量な光の円形ワープポータル
+    const portalCanvas = document.createElement('canvas');
+    portalCanvas.width = 256;
+    portalCanvas.height = 256;
+    const ctx = portalCanvas.getContext('2d');
+
+    const grad = ctx.createRadialGradient(128, 128, 12, 128, 128, 124);
+    grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.96)');
+    grad.addColorStop(0.35, 'rgba(148, 232, 255, 0.86)');
+    grad.addColorStop(0.72, 'rgba(255, 165, 224, 0.65)');
+    grad.addColorStop(0.92, 'rgba(130, 225, 255, 0.42)');
+    grad.addColorStop(1.0, 'rgba(130, 225, 255, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+
+    // 淡い渦巻き模様
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 3; i++) {
+      const a0 = (i / 3) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(128, 128, 52 + i * 16, a0, a0 + Math.PI * 0.9);
+      ctx.stroke();
+    }
+
+    const portalTex = new THREE.CanvasTexture(portalCanvas);
+    portalTex.encoding = THREE.sRGBEncoding;
+
+    this.portalGroup = new THREE.Group();
+    this.portalGroup.position.set(0, 1.75, this.portalZ);
+    this.scene.add(this.portalGroup);
+
+    this.portalDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.48, 36),
+      new THREE.MeshBasicMaterial({
+        map: portalTex,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      })
+    );
+    this.portalGroup.add(this.portalDisc);
+
+    this.portalOuterRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.5, 0.075, 10, 40),
+      new THREE.MeshBasicMaterial({ color: 0xbef2ff })
+    );
+    this.portalGroup.add(this.portalOuterRing);
+
+    this.portalInnerRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.22, 0.035, 8, 36),
+      new THREE.MeshBasicMaterial({ color: 0xffd0ee })
+    );
+    this.portalGroup.add(this.portalInnerRing);
+
+    // 床面反射用ポータル
+    this.portalReflectGroup = new THREE.Group();
+    this.portalReflectGroup.position.set(0, -1.75, this.portalZ);
+    this.portalReflectGroup.scale.set(1, -1, 1);
+    this.portalReflectGroup.renderOrder = -1;
+    this.scene.add(this.portalReflectGroup);
+
+    this.portalReflectDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.48, 28),
+      new THREE.MeshBasicMaterial({
+        map: portalTex,
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false,
+        depthTest: true,
+        side: THREE.DoubleSide,
+        stencilWrite: true,
+        stencilRef: 1,
+        stencilFunc: THREE.EqualStencilFunc
+      })
+    );
+    this.portalReflectGroup.add(this.portalReflectDisc);
+
+    const reflRingMat = new THREE.MeshBasicMaterial({
+      color: 0xbef2ff,
+      transparent: true,
+      opacity: 0.24,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.BackSide,
+      stencilWrite: true,
+      stencilRef: 1,
+      stencilFunc: THREE.EqualStencilFunc
+    });
+    const reflOuterRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.075, 8, 32), reflRingMat);
+    this.portalReflectGroup.add(reflOuterRing);
+  }
+
+  isPlayerInPortal(pos) {
+    if (!pos) return false;
+    const dx = pos.x;
+    const dz = pos.z - this.portalZ;
+    return Math.hypot(dx, dz) < 1.38 && pos.y >= 0 && pos.y < 3.4;
   }
 
   _syncPlayerReflection(key, playerObj, visible) {
@@ -609,6 +721,7 @@ class CastleInterior {
     this.floorBaseMesh.visible = !hideFloor;
     this.floorRimMesh.visible = !hideFloor;
     this.doorReflectGroup.visible = !hideFloor;
+    this.portalReflectGroup.visible = !hideFloor;
 
     if (hideFloor) {
       for (const entry of this.reflectionPool.values()) {
@@ -634,6 +747,16 @@ class CastleInterior {
     const floatY = Math.sin(this.time * 1.4) * 0.08;
     this.doorGroup.position.y = 0.16 + floatY;
     this.doorReflectGroup.position.y = -(0.16 + floatY);
+
+    // ワープポータルのアニメーション
+    const portalFloatY = Math.sin(this.time * 1.8) * 0.09;
+    const pulse = 1.0 + Math.sin(this.time * 2.6) * 0.035;
+    this.portalGroup.position.y = 1.75 + portalFloatY;
+    this.portalGroup.scale.setScalar(pulse);
+    this.portalDisc.rotation.z = this.time * 0.85;
+    this.portalReflectGroup.position.y = -(1.75 + portalFloatY);
+    this.portalReflectGroup.scale.set(pulse, -pulse, pulse);
+    this.portalReflectDisc.rotation.z = this.time * 0.85;
 
     // 扉の自動開閉（内側 -Z 側に開くため広めに反応）
     const distLocal = playerPos

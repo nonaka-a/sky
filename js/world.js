@@ -327,29 +327,36 @@ class CastleIsland {
     addTower(4.4, -6.6, 1.15, 7.2, roofSkyMat, false);
     addTower(0, -5.6, 2.05, 9.6, roofPinkMat, true);
 
-    // 両開きの重厚な木の扉（ヒンジを左右外側に置き、手前 +Z に開く）
-    const doorWidth = 1.48;
+    // 両開きの重厚な木の扉（ヒンジをピラー内側に置き、手前 +Z に開く）
+    const doorWidth = 1.40;
     const doorHeight = 3.56;
     const doorDepth = 0.22;
 
     const createDoorLeaf = (side) => {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 1.49, y0, 0.62);
+      pivot.position.set(side * 1.415, y0, 0.62);
 
       const dir = -side;
       const leafGroup = new THREE.Group();
       leafGroup.position.set(dir * (doorWidth * 0.5), doorHeight * 0.5, 0);
       pivot.add(leafGroup);
 
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, doorDepth), woodDarkMat);
+      const frameThick = 0.14;
+
+      // 板本体を枠より内側に収めて側面・上下端でのZファイティングを防止
+      const plank = new THREE.Mesh(
+        new THREE.BoxGeometry(doorWidth - frameThick * 1.8, doorHeight - frameThick * 2.0, doorDepth),
+        woodDarkMat
+      );
       leafGroup.add(plank);
 
-      const frameThick = 0.14;
-      const topFrame = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, frameThick, doorDepth + 0.04), woodFrameMat);
+      // 上下の横枠は左右縦枠の内側に収め、角の面重なりをなくす
+      const innerSpanW = doorWidth - frameThick * 2;
+      const topFrame = new THREE.Mesh(new THREE.BoxGeometry(innerSpanW, frameThick, doorDepth + 0.04), woodFrameMat);
       topFrame.position.y = doorHeight * 0.5 - frameThick * 0.5;
       leafGroup.add(topFrame);
 
-      const botFrame = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, frameThick * 1.2, doorDepth + 0.04), woodFrameMat);
+      const botFrame = new THREE.Mesh(new THREE.BoxGeometry(innerSpanW, frameThick * 1.2, doorDepth + 0.04), woodFrameMat);
       botFrame.position.y = -doorHeight * 0.5 + frameThick * 0.6;
       leafGroup.add(botFrame);
 
@@ -361,14 +368,14 @@ class CastleIsland {
       innerSide.position.x = dir * (doorWidth * 0.5 - frameThick * 0.5);
       leafGroup.add(innerSide);
 
-      for (const lx of [-0.32, 0.32]) {
-        const rib = new THREE.Mesh(new THREE.BoxGeometry(0.05, doorHeight - 0.3, doorDepth + 0.03), woodFrameMat);
+      for (const lx of [-0.30, 0.30]) {
+        const rib = new THREE.Mesh(new THREE.BoxGeometry(0.05, doorHeight - frameThick * 2.3, doorDepth + 0.025), woodFrameMat);
         rib.position.x = lx;
         leafGroup.add(rib);
       }
 
       for (const by of [-0.88, 0.82]) {
-        const strap = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 0.06, 0.18, doorDepth + 0.06), metalBeltMat);
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 0.04, 0.18, doorDepth + 0.06), metalBeltMat);
         strap.position.y = by;
         leafGroup.add(strap);
       }
@@ -648,6 +655,204 @@ class CastleIsland {
   }
 }
 
+class RainbowBridge {
+  constructor(id, p0, p1, material, cloudA = null, cloudB = null) {
+    this.id = id;
+    this.p0 = p0.clone();
+    this.p1 = p1.clone();
+    this.cloudA = cloudA;
+    this.cloudB = cloudB;
+
+    const dx = this.p1.x - this.p0.x;
+    const dz = this.p1.z - this.p0.z;
+    this.lenXZ = Math.max(0.01, Math.hypot(dx, dz));
+    this.dirX = dx / this.lenXZ;
+    this.dirZ = dz / this.lenXZ;
+    this.rightX = -this.dirZ;
+    this.rightZ = this.dirX;
+
+    this.halfWidth = 1.45;
+    this.thickness = 0.28;
+    this.archHeight = THREE.MathUtils.clamp(this.lenXZ * 0.14, 1.35, 3.6);
+
+    const pad = this.halfWidth + 1.0;
+    this.minX = Math.min(this.p0.x, this.p1.x) - pad;
+    this.maxX = Math.max(this.p0.x, this.p1.x) + pad;
+    this.minZ = Math.min(this.p0.z, this.p1.z) - pad;
+    this.maxZ = Math.max(this.p0.z, this.p1.z) + pad;
+    this.minY = Math.min(this.p0.y, this.p1.y) - this.thickness - 1.0;
+    this.maxY = Math.max(this.p0.y, this.p1.y) + this.archHeight + 1.0;
+
+    this.mesh = this._createMesh(material);
+  }
+
+  getSurfaceY(s) {
+    return this.p0.y + (this.p1.y - this.p0.y) * s + Math.sin(Math.PI * s) * this.archHeight;
+  }
+
+  getNormalAt(s, outNormal) {
+    const dyDs = (this.p1.y - this.p0.y) + Math.PI * this.archHeight * Math.cos(Math.PI * s);
+    const slope = dyDs / this.lenXZ;
+    outNormal.set(-this.dirX * slope, 1, -this.dirZ * slope).normalize();
+    return outNormal;
+  }
+
+  _createMesh(material) {
+    const segments = 24;
+    const hw = this.halfWidth;
+    const th = this.thickness;
+
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+
+    const addStrip = (sideType) => {
+      const baseVertex = positions.length / 3;
+      for (let i = 0; i <= segments; i++) {
+        const s = i / segments;
+        const cx = this.p0.x + this.dirX * (s * this.lenXZ);
+        const cz = this.p0.z + this.dirZ * (s * this.lenXZ);
+        const topY = this.getSurfaceY(s);
+        const botY = topY - th;
+
+        if (sideType === 'top') {
+          positions.push(cx - this.rightX * hw, topY, cz - this.rightZ * hw);
+          positions.push(cx + this.rightX * hw, topY, cz + this.rightZ * hw);
+          uvs.push(0, s, 1, s);
+        } else if (sideType === 'bottom') {
+          positions.push(cx - this.rightX * hw, botY, cz - this.rightZ * hw);
+          positions.push(cx + this.rightX * hw, botY, cz + this.rightZ * hw);
+          uvs.push(0, s, 1, s);
+        } else if (sideType === 'left') {
+          positions.push(cx - this.rightX * hw, topY, cz - this.rightZ * hw);
+          positions.push(cx - this.rightX * hw, botY, cz - this.rightZ * hw);
+          uvs.push(0.04, s, 0.04, s);
+        } else {
+          positions.push(cx + this.rightX * hw, topY, cz + this.rightZ * hw);
+          positions.push(cx + this.rightX * hw, botY, cz + this.rightZ * hw);
+          uvs.push(0.96, s, 0.96, s);
+        }
+
+        if (i < segments) {
+          const a = baseVertex + i * 2;
+          const b = a + 1;
+          const c = a + 2;
+          const d = a + 3;
+
+          if (sideType === 'top' || sideType === 'right') {
+            indices.push(a, b, c, b, d, c);
+          } else {
+            indices.push(a, c, b, b, c, d);
+          }
+        }
+      }
+    };
+
+    addStrip('top');
+    addStrip('bottom');
+    addStrip('left');
+    addStrip('right');
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    return new THREE.Mesh(geo, material);
+  }
+
+  updateVisibility() {
+    const visA = !this.cloudA || this.cloudA.group.visible;
+    const visB = !this.cloudB || this.cloudB.group.visible;
+    this.mesh.visible = visA && visB;
+  }
+
+  resolveCollision(pos, vel, radius) {
+    if (
+      pos.x < this.minX - radius || pos.x > this.maxX + radius ||
+      pos.z < this.minZ - radius || pos.z > this.maxZ + radius ||
+      pos.y < this.minY - radius || pos.y > this.maxY + radius
+    ) {
+      return { hitGround: false, hardLandingVn: 0 };
+    }
+
+    const dx = pos.x - this.p0.x;
+    const dz = pos.z - this.p0.z;
+    const proj = dx * this.dirX + dz * this.dirZ;
+    const s = proj / this.lenXZ;
+    const u = dx * this.rightX + dz * this.rightZ;
+
+    if (s < -radius / this.lenXZ || s > 1 + radius / this.lenXZ || Math.abs(u) > this.halfWidth + radius) {
+      return { hitGround: false, hardLandingVn: 0 };
+    }
+
+    const sC = THREE.MathUtils.clamp(s, 0, 1);
+    const topY = this.getSurfaceY(sC);
+    const botY = topY - this.thickness;
+
+    let hitGround = false;
+    let hardLandingVn = 0;
+
+    // 上面への着地・坂道歩行判定
+    if (s >= -0.01 && s <= 1.01 && Math.abs(u) <= this.halfWidth + radius * 0.65) {
+      if (pos.y >= topY - this.thickness * 0.55 && pos.y - radius <= topY + 0.04 && vel.y <= 3.5) {
+        if (vel.y < hardLandingVn) hardLandingVn = vel.y;
+        pos.y = topY + radius;
+        if (vel.y < 0) vel.y = 0;
+        hitGround = true;
+      } else if (pos.y < botY && pos.y + radius > botY && vel.y > 0) {
+        pos.y = botY - radius;
+        vel.y = 0;
+      }
+    }
+
+    // 橋の側面からの押し出し
+    if (!hitGround && s >= 0 && s <= 1 && pos.y > botY - radius * 0.35 && pos.y < topY - radius * 0.35) {
+      const absU = Math.abs(u);
+      if (absU > this.halfWidth && absU < this.halfWidth + radius) {
+        const sign = u >= 0 ? 1 : -1;
+        const pen = this.halfWidth + radius - absU;
+        const nx = this.rightX * sign;
+        const nz = this.rightZ * sign;
+        pos.x += nx * pen;
+        pos.z += nz * pen;
+        const vn = vel.x * nx + vel.z * nz;
+        if (vn < 0) {
+          vel.x -= nx * vn;
+          vel.z -= nz * vn;
+        }
+      }
+    }
+
+    return { hitGround, hardLandingVn };
+  }
+
+  getShadowInfo(px, py, pz, outNormal) {
+    if (px < this.minX || px > this.maxX || pz < this.minZ || pz > this.maxZ) {
+      return null;
+    }
+
+    const dx = px - this.p0.x;
+    const dz = pz - this.p0.z;
+    const s = (dx * this.dirX + dz * this.dirZ) / this.lenXZ;
+    const u = dx * this.rightX + dz * this.rightZ;
+
+    if (s >= 0 && s <= 1 && Math.abs(u) <= this.halfWidth) {
+      const surfaceY = this.getSurfaceY(s);
+      if (surfaceY <= py + 0.3) {
+        this.getNormalAt(s, outNormal);
+        return { y: surfaceY, normal: outNormal };
+      }
+    }
+    return null;
+  }
+
+  dispose() {
+    this.mesh.geometry.dispose();
+  }
+}
+
 class SkyWorld {
   constructor(scene) {
     this.scene = scene;
@@ -655,8 +860,11 @@ class SkyWorld {
     this.activeRadiusChunks = 2; // 周囲 5x5 チャンクを表示
     this.clouds = [];
     this.chunks = new Map();
+    this.rainbowBridges = [];
+    this.bridgeIds = new Set();
     this.time = 0;
     this._tmpShadowNormal = new THREE.Vector3();
+    this._tmpBridgeNormal = new THREE.Vector3();
 
     this.puffGeo = new THREE.SphereGeometry(1, 20, 16);
     this.starGeo = new THREE.OctahedronGeometry(0.55, 0);
@@ -669,6 +877,8 @@ class SkyWorld {
       island: new THREE.MeshToonMaterial({ color: 0xffffff }),
       gold: new THREE.MeshToonMaterial({ color: 0xffd166 })
     };
+
+    this.rainbowMaterial = this._createRainbowMaterial();
 
     this._createSkyEnvironment();
 
@@ -683,6 +893,43 @@ class SkyWorld {
     this.starBuddy = new StarBuddy(new THREE.Vector3(15, 4.0, 4));
     this.scene.add(this.starBuddy.group);
     this.scene.add(this.starBuddy.dropShadow);
+  }
+
+  _createRainbowMaterial() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+
+    const stripes = [
+      '#ffffff',
+      '#ff708d',
+      '#ffa84c',
+      '#ffe152',
+      '#6fe37e',
+      '#57d2ff',
+      '#6d94ff',
+      '#b87dff',
+      '#ffffff'
+    ];
+    const weights = [0.45, 1, 1, 1, 1, 1, 1, 1, 0.45];
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+    let x = 0;
+    for (let i = 0; i < stripes.length; i++) {
+      const w = (weights[i] / totalWeight) * canvas.width;
+      ctx.fillStyle = stripes[i];
+      ctx.fillRect(x, 0, w + 1, canvas.height);
+      x += w;
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding;
+    return new THREE.MeshToonMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0.93
+    });
   }
 
   _createSkyEnvironment() {
@@ -787,6 +1034,119 @@ class SkyWorld {
     }
   }
 
+  _syncCastleRainbowBridges() {
+    if (!this.castleIsland) return;
+
+    // 雲がアンロードされた橋を削除
+    for (let i = this.rainbowBridges.length - 1; i >= 0; i--) {
+      const br = this.rainbowBridges[i];
+      const hasA = !br.cloudA || this.clouds.includes(br.cloudA);
+      const hasB = !br.cloudB || this.clouds.includes(br.cloudB);
+      if (!hasA || !hasB) {
+        this.scene.remove(br.mesh);
+        br.dispose();
+        this.bridgeIds.delete(br.id);
+        this.rainbowBridges.splice(i, 1);
+      }
+    }
+
+    const castlePos = this.castleIsland.position;
+    const castleRadius = this.castleIsland.islandRadius;
+    const nearRange = 64;
+
+    // 城周辺にある大きな雲（island）を抽出
+    const nearIslands = [];
+    for (const c of this.clouds) {
+      if (c.type !== 'island') continue;
+      const dCastle = Math.hypot(c.basePos.x - castlePos.x, c.basePos.z - castlePos.z);
+      if (dCastle <= nearRange) {
+        nearIslands.push(c);
+      }
+    }
+
+    // 雲の楕円体表面より少し下に端点を置き、雲にめり込ませて歩いて渡れるようにする
+    const getCloudAnchor = (cloud, ux, uz) => {
+      const col = cloud.colliders[0];
+      const ratio = 0.68;
+      const surfaceOffsetY = col.ry * Math.sqrt(1 - ratio * ratio);
+      return new THREE.Vector3(
+        cloud.basePos.x + ux * (col.rx * ratio),
+        cloud.basePos.y + surfaceOffsetY - 0.28,
+        cloud.basePos.z + uz * (col.rx * ratio)
+      );
+    };
+
+    const addCloudBridge = (c1, c2) => {
+      const id = c1.id < c2.id ? `${c1.id}|${c2.id}` : `${c2.id}|${c1.id}`;
+      if (this.bridgeIds.has(id)) return;
+
+      const dx = c2.basePos.x - c1.basePos.x;
+      const dz = c2.basePos.z - c1.basePos.z;
+      const dist = Math.hypot(dx, dz);
+      const r1 = c1.colliders[0].rx;
+      const r2 = c2.colliders[0].rx;
+      if (dist <= r1 + r2 + 3.0 || dist > 46.0) return;
+
+      const ux = dx / dist;
+      const uz = dz / dist;
+      const p0 = getCloudAnchor(c1, ux, uz);
+      const p1 = getCloudAnchor(c2, -ux, -uz);
+
+      // お城本体の上を横切る場合は架けない
+      const midX = (p0.x + p1.x) * 0.5;
+      const midZ = (p0.z + p1.z) * 0.5;
+      if (Math.hypot(midX - castlePos.x, midZ - castlePos.z) < castleRadius + 1.5) return;
+
+      const bridge = new RainbowBridge(id, p0, p1, this.rainbowMaterial, c1, c2);
+      this.scene.add(bridge.mesh);
+      this.rainbowBridges.push(bridge);
+      this.bridgeIds.add(id);
+    };
+
+    // 城周辺の大きな雲同士をつなぐ
+    for (let i = 0; i < nearIslands.length; i++) {
+      for (let j = i + 1; j < nearIslands.length; j++) {
+        addCloudBridge(nearIslands[i], nearIslands[j]);
+      }
+    }
+
+    // 城の前にある大きな雲から城の島へ虹の橋を架ける
+    let frontCloud = null;
+    let bestFrontDist = Infinity;
+    for (const c of nearIslands) {
+      if (c.basePos.z > castlePos.z + 6.0) {
+        const d = Math.hypot(c.basePos.x - castlePos.x, c.basePos.z - castlePos.z);
+        if (d < bestFrontDist) {
+          bestFrontDist = d;
+          frontCloud = c;
+        }
+      }
+    }
+
+    if (frontCloud) {
+      const id = `${frontCloud.id}|castle`;
+      if (!this.bridgeIds.has(id)) {
+        const dx = castlePos.x - frontCloud.basePos.x;
+        const dz = castlePos.z - frontCloud.basePos.z;
+        const dist = Math.hypot(dx, dz);
+        const ux = dx / dist;
+        const uz = dz / dist;
+
+        const p0 = getCloudAnchor(frontCloud, ux, uz);
+        const p1 = new THREE.Vector3(
+          castlePos.x - ux * (castleRadius - 0.75),
+          this.castleIsland.groundWorldY - 0.08,
+          castlePos.z - uz * (castleRadius - 0.75)
+        );
+
+        const bridge = new RainbowBridge(id, p0, p1, this.rainbowMaterial, frontCloud, null);
+        this.scene.add(bridge.mesh);
+        this.rainbowBridges.push(bridge);
+        this.bridgeIds.add(id);
+      }
+    }
+  }
+
   updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null, remoteStarState = null, partnerPos = null) {
     this.time += dt;
     this.skyDome.position.copy(playerPos);
@@ -795,6 +1155,7 @@ class SkyWorld {
     const cz = Math.round(playerPos.z / this.chunkSize);
 
     const neededKeys = new Set();
+    let chunkChanged = false;
 
     for (let dx = -this.activeRadiusChunks; dx <= this.activeRadiusChunks; dx++) {
       for (let dz = -this.activeRadiusChunks; dz <= this.activeRadiusChunks; dz++) {
@@ -805,6 +1166,7 @@ class SkyWorld {
 
         if (!this.chunks.has(key)) {
           this._generateChunk(gx, gz, key);
+          chunkChanged = true;
         }
       }
     }
@@ -817,6 +1179,7 @@ class SkyWorld {
           if (idx !== -1) this.clouds.splice(idx, 1);
         }
         this.chunks.delete(key);
+        chunkChanged = true;
       }
     }
 
@@ -841,6 +1204,14 @@ class SkyWorld {
       cloud.visualScale = THREE.MathUtils.lerp(cloud.visualScale, targetScale, Math.min(1, dt * 6));
       cloud.group.scale.setScalar(cloud.visualScale);
       cloud.group.visible = cloud.visualScale > 0.03;
+    }
+
+    if (chunkChanged) {
+      this._syncCastleRainbowBridges();
+    }
+
+    for (const bridge of this.rainbowBridges) {
+      bridge.updateVisibility();
     }
 
     if (this.castleIsland) {
@@ -876,8 +1247,22 @@ class SkyWorld {
   }
 
   resolveStructureCollisions(pos, vel, radius) {
-    if (!this.castleIsland) return { hitGround: false, hardLandingVn: 0 };
-    return this.castleIsland.resolveCollisions(pos, vel, radius);
+    let hitGround = false;
+    let hardLandingVn = 0;
+
+    if (this.castleIsland) {
+      const res = this.castleIsland.resolveCollisions(pos, vel, radius);
+      if (res.hitGround) hitGround = true;
+      if (res.hardLandingVn < hardLandingVn) hardLandingVn = res.hardLandingVn;
+    }
+
+    for (const bridge of this.rainbowBridges) {
+      const res = bridge.resolveCollision(pos, vel, radius);
+      if (res.hitGround) hitGround = true;
+      if (res.hardLandingVn < hardLandingVn) hardLandingVn = res.hardLandingVn;
+    }
+
+    return { hitGround, hardLandingVn };
   }
 
   _generateChunk(gx, gz, key) {
@@ -1008,8 +1393,10 @@ class SkyWorld {
     }
 
     const moveAxis = h1 > 0.5 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+    const id = `${Math.round(x * 10)}_${Math.round(y * 10)}_${Math.round(z * 10)}`;
 
     return {
+      id,
       type,
       group,
       basePos: new THREE.Vector3(x, y, z),
@@ -1034,6 +1421,15 @@ class SkyWorld {
       if (castleShadowY !== null) {
         this._tmpShadowNormal.set(0, 1, 0);
         bestInfo = { y: castleShadowY, normal: this._tmpShadowNormal };
+      }
+    }
+
+    for (const bridge of this.rainbowBridges) {
+      if (!bridge.mesh.visible) continue;
+      const bShadow = bridge.getShadowInfo(px, py, pz, this._tmpBridgeNormal);
+      if (bShadow && (bestInfo === null || bShadow.y > bestInfo.y)) {
+        this._tmpShadowNormal.copy(bShadow.normal);
+        bestInfo = { y: bShadow.y, normal: this._tmpShadowNormal };
       }
     }
 

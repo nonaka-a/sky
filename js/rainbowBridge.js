@@ -14,7 +14,7 @@ class RainbowBridge {
     this.rightX = -this.dirZ;
     this.rightZ = this.dirX;
 
-    this.halfWidth = 1.45;
+    this.halfWidth = 2.18;
     this.thickness = 0.28;
     this.archHeight = THREE.MathUtils.clamp(this.lenXZ * 0.14, 1.35, 3.6);
 

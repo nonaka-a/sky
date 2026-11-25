@@ -8,6 +8,7 @@ class SkyWorld {
     this.structures = [];
     this.rainbowBridges = [];
     this.bridgeIds = new Set();
+    this.contrails = [];
     this.time = 0;
     this._tmpShadowNormal = new THREE.Vector3();
     this._tmpBridgeNormal = new THREE.Vector3();
@@ -30,6 +31,7 @@ class SkyWorld {
     this.buildingBuilder = new CloudBuildingBuilder();
 
     this._createSkyEnvironment();
+    this._createContrails();
 
     // お城の浮島（スタート地点正面から見える位置に常駐）
     this.castleIsland = this.addStructure(new CastleIsland(new THREE.Vector3(0, 3.5, -74)));
@@ -160,6 +162,159 @@ class SkyWorld {
     const dir = new THREE.DirectionalLight(0xfffdf5, 0.75);
     dir.position.set(25, 45, 20);
     this.scene.add(dir);
+  }
+
+  _createContrailTexture() {
+    const w = 512;
+    const h = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.clearRect(0, 0, w, h);
+
+    // 尾端（左）は淡く広がり、先端（右）に向かって細く白い飛行機雲の筋を描く
+    const steps = 110;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = 12 + t * (w - 28);
+      const yJitter = Math.sin(t * 28.0) * (1 - t) * 2.2 + Math.cos(t * 17.0) * (1 - t) * 1.4;
+      const y = h * 0.5 + yJitter;
+
+      const r = THREE.MathUtils.lerp(22, 5.5, Math.pow(t, 0.75));
+      const alpha = Math.sin(Math.pow(t, 0.65) * Math.PI * 0.94) * (0.14 + t * 0.24);
+
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0.0, `rgba(255, 255, 255, ${Math.min(0.65, alpha * 1.5)})`);
+      grad.addColorStop(0.45, `rgba(255, 255, 255, ${alpha * 0.75})`);
+      grad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+
+  _createContrails() {
+    this.contrailGroup = new THREE.Group();
+    this.scene.add(this.contrailGroup);
+
+    const tex = this._createContrailTexture();
+    const specs = [
+      {
+        length: 230,
+        width: 7.2,
+        dist: 170,
+        height: 52,
+        anchorAngle: -0.45,
+        yaw: 0.35,
+        pitch: 0.08,
+        speed: 3.4,
+        phase: 0.15,
+        baseOpacity: 0.88
+      },
+      {
+        length: 260,
+        width: 8.0,
+        dist: 185,
+        height: 64,
+        anchorAngle: 1.95,
+        yaw: -0.85,
+        pitch: 0.06,
+        speed: 2.9,
+        phase: 0.52,
+        baseOpacity: 0.82
+      },
+      {
+        length: 205,
+        width: 6.4,
+        dist: 162,
+        height: 44,
+        anchorAngle: -2.35,
+        yaw: 1.45,
+        pitch: -0.05,
+        speed: 3.8,
+        phase: 0.78,
+        baseOpacity: 0.78
+      }
+    ];
+
+    const dotGeo = new THREE.SphereGeometry(0.48, 8, 6);
+
+    for (const s of specs) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: s.baseOpacity,
+        depthWrite: false,
+        fog: false,
+        side: THREE.DoubleSide
+      });
+
+      const planeGeo = new THREE.PlaneGeometry(s.length, s.width);
+      const ribbonA = new THREE.Mesh(planeGeo, mat);
+      const ribbonB = new THREE.Mesh(planeGeo, mat);
+      ribbonB.rotation.x = Math.PI / 2;
+
+      const trailHolder = new THREE.Group();
+      trailHolder.add(ribbonA);
+      trailHolder.add(ribbonB);
+
+      // 先端（+X側）に小さな飛行機のキラッとした点
+      const leadMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: s.baseOpacity,
+        fog: false
+      });
+      const leadDot = new THREE.Mesh(dotGeo, leadMat);
+      leadDot.position.set(s.length * 0.485, 0, 0);
+      trailHolder.add(leadDot);
+
+      trailHolder.rotation.order = 'YXZ';
+      trailHolder.rotation.y = s.yaw;
+      trailHolder.rotation.z = s.pitch;
+
+      this.contrailGroup.add(trailHolder);
+      this.contrails.push({
+        holder: trailHolder,
+        mat,
+        leadMat,
+        spec: s,
+        dirX: Math.cos(s.yaw),
+        dirZ: -Math.sin(s.yaw),
+        baseX: Math.sin(s.anchorAngle) * s.dist,
+        baseZ: -Math.cos(s.anchorAngle) * s.dist
+      });
+    }
+  }
+
+  _updateContrails(playerPos) {
+    this.contrailGroup.position.set(playerPos.x, 0, playerPos.z);
+
+    const cycleSpan = 340;
+    for (const c of this.contrails) {
+      const s = c.spec;
+      const t = (this.time * (s.speed / cycleSpan) + s.phase) % 1.0;
+      const offsetAlong = (t - 0.5) * cycleSpan;
+
+      c.holder.position.set(
+        c.baseX + c.dirX * offsetAlong,
+        s.height + offsetAlong * Math.sin(s.pitch) * 0.35,
+        c.baseZ + c.dirZ * offsetAlong
+      );
+
+      // 周期の最初と最後だけ自然にフェードさせて途切れをなくす
+      const edgeFade = Math.min(1.0, Math.min(t / 0.12, (1.0 - t) / 0.12));
+      const op = s.baseOpacity * edgeFade;
+      c.mat.opacity = op;
+      c.leadMat.opacity = op;
+    }
   }
 
   _hash(x, z, seed = 0) {
@@ -347,6 +502,7 @@ class SkyWorld {
   updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null, remoteStarState = null, partnerPos = null) {
     this.time += dt;
     this.skyDome.position.copy(playerPos);
+    this._updateContrails(playerPos);
 
     const cx = Math.round(playerPos.x / this.chunkSize);
     const cz = Math.round(playerPos.z / this.chunkSize);

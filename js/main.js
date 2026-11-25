@@ -31,6 +31,7 @@ class MaimaiGame {
     this.localBubbleText = document.getElementById('local-chat-bubble-text');
     this.remoteBubble = document.getElementById('remote-chat-bubble');
     this.remoteBubbleText = document.getElementById('remote-chat-bubble-text');
+    this.portalInfoBubble = document.getElementById('portal-info-bubble');
 
     this.inputRoomId = document.getElementById('input-room-id');
     this.joinErrorMsg = document.getElementById('join-error-msg');
@@ -134,6 +135,16 @@ class MaimaiGame {
     requestAnimationFrame(this._boundLoop);
   }
 
+  _updateWarpPartnerVisibility() {
+    const canWarp =
+      this.gameMode !== 'solo' &&
+      this.network.isConnected &&
+      !!this.remotePlayer &&
+      this.currentArea !== 'mini_skySlider' &&
+      this.remoteArea !== 'mini_skySlider';
+    this.btnWarpPartner.classList.toggle('hidden', !canWarp);
+  }
+
   _getActiveScene() {
     if (this.currentArea === 'castle') return this.castleInterior.scene;
     if (this.currentArea === 'mini_skySlider') return this.miniSkySlider.scene;
@@ -185,7 +196,7 @@ class MaimaiGame {
 
       this.roomPartnerStatus.textContent = '2人プレイ中';
       this.roomPartnerStatus.classList.add('online');
-      this.btnWarpPartner.classList.remove('hidden');
+      this._updateWarpPartnerVisibility();
 
       if (this.gameMode === 'host') {
         this._showToast('きいろまいまいが遊びに来たよ！', 3.2);
@@ -806,7 +817,7 @@ class MaimaiGame {
   }
 
   _warpToPartner() {
-    if (!this.remotePlayer) return;
+    if (!this.remotePlayer || this.currentArea === 'mini_skySlider' || this.remoteArea === 'mini_skySlider') return;
     this.respawnFlash.classList.add('active');
 
     if (this.remoteArea === 'castle') {
@@ -948,6 +959,7 @@ class MaimaiGame {
     this.btnChatClear.classList.add('hidden');
     this.localBubble.classList.add('hidden');
     this.remoteBubble.classList.add('hidden');
+    this.portalInfoBubble.classList.add('hidden');
     this.joystickKnob.classList.toggle('yellow', isYellow);
 
     if (mode === 'solo') {
@@ -1003,6 +1015,7 @@ class MaimaiGame {
     this.toastBanner.classList.add('hidden');
     this.localBubble.classList.add('hidden');
     this.remoteBubble.classList.add('hidden');
+    this.portalInfoBubble.classList.add('hidden');
     this.titleScreen.classList.remove('hidden');
     this.controls.reset();
     this._hideDialogue();
@@ -1049,6 +1062,7 @@ class MaimaiGame {
     } else if (this.isPlaying && this.isPaused) {
       this._syncNetwork(dt);
       const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
+    this._updateWarpPartnerVisibility();
       if (this.remotePlayer) {
         this.remotePlayer.group.visible = partnerHere;
         if (!partnerHere) this.remotePlayer.dropShadow.visible = false;
@@ -1128,6 +1142,7 @@ class MaimaiGame {
     if (this.areaPortalCooldown > 0) this.areaPortalCooldown -= dt;
 
     const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
+    this._updateWarpPartnerVisibility();
 
     // ホスト時は他エリアにいてもワールド側の時間とNPC同期を保つ
     if (this.currentArea !== 'sky' && this.gameMode === 'host' && this.network.isConnected) {
@@ -1521,6 +1536,38 @@ class MaimaiGame {
     } else {
       this.remoteBubble.classList.add('hidden');
     }
+    this._updatePortalInfoBubble();
+  }
+
+  _updatePortalInfoBubble() {
+    if (!this.portalInfoBubble) return;
+    if (!this.isPlaying || this.currentArea !== 'castle' || this.isAreaTransitioning) {
+      this.portalInfoBubble.classList.add('hidden');
+      return;
+    }
+
+    const pz = this.castleInterior.portalZ;
+    const distToPlayer = Math.hypot(this.player.position.x, this.player.position.z - pz);
+    if (distToPlayer > 6.8) {
+      this.portalInfoBubble.classList.add('hidden');
+      return;
+    }
+
+    this._tmpBubblePos.set(0, 3.85, pz);
+    const camDist = this.camera.position.distanceTo(this._tmpBubblePos);
+    this._tmpBubblePos.applyMatrix4(this.camera.matrixWorldInverse);
+    if (this._tmpBubblePos.z >= -0.2) {
+      this.portalInfoBubble.classList.add('hidden');
+      return;
+    }
+
+    this._tmpBubblePos.applyMatrix4(this.camera.projectionMatrix);
+    const sx = (this._tmpBubblePos.x * 0.5 + 0.5) * window.innerWidth;
+    const sy = (-this._tmpBubblePos.y * 0.5 + 0.5) * window.innerHeight;
+    const scale = THREE.MathUtils.clamp(11.5 / Math.max(4.5, camDist), 0.72, 1.05);
+
+    this.portalInfoBubble.classList.remove('hidden');
+    this.portalInfoBubble.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -100%) scale(${scale})`;
   }
 
   _updateSingleBubble(playerObj, bubbleEl, textEl) {

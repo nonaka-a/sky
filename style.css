@@ -495,6 +495,75 @@ button {
   border-color: #f3bd31 transparent transparent transparent;
 }
 
+/* 城内ポータル案内ウィンドウ */
+.portal-info-bubble {
+  position: fixed;
+  left: 0;
+  top: 0;
+  min-width: 224px;
+  max-width: 280px;
+  padding: 11px 16px 12px;
+  border-radius: 22px;
+  background: rgba(255, 253, 255, 0.96);
+  border: 2.5px solid #76c8f5;
+  box-shadow:
+    0 10px 24px rgba(82, 118, 150, 0.24),
+    0 2px 10px rgba(118, 200, 245, 0.28);
+  color: var(--color-text);
+  text-align: center;
+  pointer-events: none;
+  z-index: 9;
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
+.portal-info-bubble::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -11px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 11px 9px 0 9px;
+  border-color: #76c8f5 transparent transparent transparent;
+}
+
+.portal-info-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 8px 7px 0 7px;
+  border-color: rgba(255, 253, 255, 0.98) transparent transparent transparent;
+}
+
+.portal-info-title {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #5cc2f7 0%, #8b9eff 100%);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  box-shadow: 0 3px 8px rgba(92, 194, 247, 0.28);
+}
+
+.portal-info-desc {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
 /* 右下（おしゃべりの左）：ふきだしをけすボタン */
 .btn-chat-clear-hud {
   position: absolute;

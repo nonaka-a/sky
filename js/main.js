@@ -401,7 +401,7 @@ class MaimaiGame {
       this.player.safeCloud = null;
       this.player.safeFallbackPos.copy(exitPos);
       this.camYaw = 0;
-      this.camPitch = THREE.MathUtils.clamp(this.camPitch, 0.08, 1.15);
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch, -0.78, 1.15);
       this.camLookTarget.set(exitPos.x, exitPos.y + 0.9, exitPos.z);
       this._updateCamera(1.0);
       this.sendStatePacket();
@@ -522,7 +522,7 @@ class MaimaiGame {
       this.ui.hideSliderTimer();
       this.player.setScene(this.scene);
       this.remotePlayer.setScene(this.scene);
-      this.camPitch = THREE.MathUtils.clamp(this.camPitch, 0.08, 1.15);
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch, -0.78, 1.15);
       const target = this.remotePlayer.position.clone().add(new THREE.Vector3(0, 2.0, 0));
 
       this.world.updateChunks(
@@ -781,7 +781,7 @@ class MaimaiGame {
       return;
     }
 
-    const minPitch = this.currentArea === 'castle' ? -0.78 : 0.08;
+    const minPitch = -0.78;
     const camD = this.controls.consumeCameraDelta();
     this.camYaw -= camD.x * 0.0055;
     this.camPitch = THREE.MathUtils.clamp(this.camPitch + camD.y * 0.0045, minPitch, 1.15);

@@ -36,6 +36,9 @@ class SkyWorld {
     // お城の浮島（スタート地点正面から見える位置に常駐）
     this.castleIsland = this.addStructure(new CastleIsland(new THREE.Vector3(0, 3.5, -74)));
 
+    // スタート地点後方の巨大な入道雲（登山できる）
+    this.cumulonimbus = this.addStructure(new CumulonimbusCloud(new THREE.Vector3(0, 0, 165)));
+
     // お城の左右の噴水雲＋お城と繋ぐ虹の橋
     this.leftFountainCloud = this.addStructure(
       new FountainCloud('fountain_left', new THREE.Vector3(-26.5, 4.4, -72))
@@ -401,6 +404,69 @@ class SkyWorld {
       );
     };
 
+    const distPointSeg2D = (px, pz, sx0, sz0, sx1, sz1) => {
+      const vx = sx1 - sx0;
+      const vz = sz1 - sz0;
+      const lenSq = vx * vx + vz * vz;
+      if (lenSq < 0.0001) return Math.hypot(px - sx0, pz - sz0);
+      const t = THREE.MathUtils.clamp(((px - sx0) * vx + (pz - sz0) * vz) / lenSq, 0, 1);
+      return Math.hypot(px - (sx0 + vx * t), pz - (sz0 + vz * t));
+    };
+
+    const cross2D = (ax, az, bx, bz, cx, cz) => {
+      return (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+    };
+
+    const conflictsWithExistingBridge = (p0, p1, c1, c2) => {
+      const dirX = p1.x - p0.x;
+      const dirZ = p1.z - p0.z;
+      const len = Math.hypot(dirX, dirZ) || 1;
+      const ux = dirX / len;
+      const uz = dirZ / len;
+
+      for (const br of this.rainbowBridges) {
+        const shareA = (c1 && (br.cloudA === c1 || br.cloudB === c1));
+        const shareB = (c2 && (br.cloudA === c2 || br.cloudB === c2));
+
+        // 同じ島から近い角度（約44度以内）で2本目の橋が出ないようにする
+        if (shareA || shareB) {
+          const bdx = br.p1.x - br.p0.x;
+          const bdz = br.p1.z - br.p0.z;
+          const bLen = Math.hypot(bdx, bdz) || 1;
+          let bx = bdx / bLen;
+          let bz = bdz / bLen;
+          // 共有している島から外向きベクトル同士の角度を比較
+          if ((c1 && br.cloudB === c1) || (c2 && br.cloudA === c2)) {
+            bx = -bx;
+            bz = -bz;
+          }
+          const dot = ux * bx + uz * bz;
+          if (dot > 0.72) return true;
+        }
+
+        // 2D平面上での交差または近接重複判定
+        const c1v = cross2D(p0.x, p0.z, p1.x, p1.z, br.p0.x, br.p0.z);
+        const c2v = cross2D(p0.x, p0.z, p1.x, p1.z, br.p1.x, br.p1.z);
+        const c3v = cross2D(br.p0.x, br.p0.z, br.p1.x, br.p1.z, p0.x, p0.z);
+        const c4v = cross2D(br.p0.x, br.p0.z, br.p1.x, br.p1.z, p1.x, p1.z);
+        if (c1v * c2v < 0 && c3v * c4v < 0) {
+          return true;
+        }
+
+        const midX = (p0.x + p1.x) * 0.5;
+        const midZ = (p0.z + p1.z) * 0.5;
+        if (distPointSeg2D(midX, midZ, br.p0.x, br.p0.z, br.p1.x, br.p1.z) < 6.0) {
+          return true;
+        }
+        const bMidX = (br.p0.x + br.p1.x) * 0.5;
+        const bMidZ = (br.p0.z + br.p1.z) * 0.5;
+        if (distPointSeg2D(bMidX, bMidZ, p0.x, p0.z, p1.x, p1.z) < 6.0) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     const addCloudBridge = (c1, c2) => {
       const id = c1.id < c2.id ? `${c1.id}|${c2.id}` : `${c2.id}|${c1.id}`;
       if (this.bridgeIds.has(id)) return;
@@ -417,6 +483,7 @@ class SkyWorld {
       const p0 = getCloudAnchor(c1, ux, uz);
       const p1 = getCloudAnchor(c2, -ux, -uz);
 
+      // 構造物や他の島の上を跨ぐ橋を除外
       const midX = (p0.x + p1.x) * 0.5;
       const midZ = (p0.z + p1.z) * 0.5;
       for (const st of this.structures) {
@@ -424,12 +491,25 @@ class SkyWorld {
         if (Math.hypot(midX - st.position.x, midZ - st.position.z) < blockR) return;
       }
 
+      for (const other of this.clouds) {
+        if (other === c1 || other === c2 || other.type !== 'island') continue;
+        const orx = other.colliders[0] ? other.colliders[0].rx : 8.5;
+        if (distPointSeg2D(other.basePos.x, other.basePos.z, p0.x, p0.z, p1.x, p1.z) < orx + 3.5) {
+          return;
+        }
+      }
+
+      if (conflictsWithExistingBridge(p0, p1, c1, c2)) return;
+
       const bridge = new RainbowBridge(id, p0, p1, this.rainbowMaterial, c1, c2);
       this.scene.add(bridge.mesh);
       this.rainbowBridges.push(bridge);
       this.bridgeIds.add(id);
     };
 
+    const structureNearGroups = [];
+
+    // 1パス目：構造物（お城・入道雲）と手前雲島を繋ぐメインの橋を先に確定する
     for (const st of this.structures) {
       if (st.bridgeTargetRadius === null) continue;
 
@@ -444,17 +524,15 @@ class SkyWorld {
           nearIslands.push(c);
         }
       }
-
-      for (let i = 0; i < nearIslands.length; i++) {
-        for (let j = i + 1; j < nearIslands.length; j++) {
-          addCloudBridge(nearIslands[i], nearIslands[j]);
-        }
-      }
+      structureNearGroups.push(nearIslands);
 
       let connectCloud = null;
       let bestFrontDist = Infinity;
       for (const c of nearIslands) {
-        if (c.basePos.z > stPos.z + 6.0) {
+        const isFrontSide = st.id === 'cumulonimbus'
+          ? c.basePos.z < stPos.z - 6.0
+          : c.basePos.z > stPos.z + 6.0;
+        if (isFrontSide) {
           const d = Math.hypot(c.basePos.x - stPos.x, c.basePos.z - stPos.z);
           if (d < bestFrontDist) {
             bestFrontDist = d;
@@ -496,6 +574,24 @@ class SkyWorld {
           this.bridgeIds.add(id);
         }
       }
+    }
+
+    // 2パス目：雲島同士の橋を距離が短い順に配置し、既存橋との重複・上跨ぎを防ぐ
+    const candidatePairs = [];
+    for (const nearIslands of structureNearGroups) {
+      for (let i = 0; i < nearIslands.length; i++) {
+        for (let j = i + 1; j < nearIslands.length; j++) {
+          const c1 = nearIslands[i];
+          const c2 = nearIslands[j];
+          const dist = Math.hypot(c2.basePos.x - c1.basePos.x, c2.basePos.z - c1.basePos.z);
+          candidatePairs.push({ c1, c2, dist });
+        }
+      }
+    }
+    candidatePairs.sort((a, b) => a.dist - b.dist);
+
+    for (const pair of candidatePairs) {
+      addCloudBridge(pair.c1, pair.c2);
     }
   }
 
@@ -609,10 +705,14 @@ class SkyWorld {
   resolveStructureCollisions(pos, vel, radius) {
     let hitGround = false;
     let hardLandingVn = 0;
+    let hitStructure = null;
 
     for (const st of this.structures) {
       const res = st.resolveCollisions(pos, vel, radius);
-      if (res.hitGround) hitGround = true;
+      if (res.hitGround) {
+        hitGround = true;
+        hitStructure = st;
+      }
       if (res.hardLandingVn < hardLandingVn) hardLandingVn = res.hardLandingVn;
     }
 
@@ -622,7 +722,7 @@ class SkyWorld {
       if (res.hardLandingVn < hardLandingVn) hardLandingVn = res.hardLandingVn;
     }
 
-    return { hitGround, hardLandingVn };
+    return { hitGround, hardLandingVn, hitStructure };
   }
 
   checkStructureEntrances(playerPos) {
@@ -678,6 +778,11 @@ class SkyWorld {
       // 既存の雲の間の空きスペースに黄色い雲を配置
       chunkClouds.push(this._createCloud(-2, 1.5, -45, 'yellow', 204, false));
     } else {
+      if (gx === 0 && gz === 2) {
+        // 入道雲の手前（z = 108）に虹の橋で繋がる案内用の雲島を確定配置
+        chunkClouds.push(this._createCloud(0, 0.8, 108, 'island', 91, false));
+      }
+
       const count = 5 + Math.floor(this._hash(gx, gz, 1) * 3);
       for (let i = 0; i < count; i++) {
         const rx = (this._hash(gx, gz, i * 10 + 2) - 0.5) * (this.chunkSize - 8);
@@ -686,6 +791,10 @@ class SkyWorld {
 
         const wx = gx * this.chunkSize + rx;
         const wz = gz * this.chunkSize + rz;
+
+        if (gx === 0 && gz === 2 && Math.hypot(wx, wz - 108) < 16) {
+          continue;
+        }
 
         let tooCloseToStructure = false;
         for (const st of this.structures) {

@@ -319,6 +319,14 @@ class CastleIsland extends StructureBase {
     this.rightDoorOpenCollider.active = isPassable;
   }
 
+  getSafeSpot(playerPos, radius) {
+    return new THREE.Vector3(
+      this.position.x,
+      this.groundWorldY + radius + 0.6,
+      this.position.z + 6.5
+    );
+  }
+
   checkEntrance(playerPos) {
     if (!playerPos) return null;
     const dx = playerPos.x - this.position.x;

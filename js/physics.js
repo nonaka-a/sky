@@ -113,13 +113,12 @@ class PhysicsSystem {
         sendSeFn('land');
       }
 
-      if (world.castleIsland) {
-        player.safeCloud = null;
-        player.safeFallbackPos.set(
-          world.castleIsland.position.x,
-          world.castleIsland.groundWorldY + r + 0.6,
-          world.castleIsland.position.z + 6.5
-        );
+      if (structHit.hitStructure) {
+        const safeSpot = structHit.hitStructure.getSafeSpot(p, r);
+        if (safeSpot) {
+          player.safeCloud = null;
+          player.safeFallbackPos.copy(safeSpot);
+        }
       }
     }
 

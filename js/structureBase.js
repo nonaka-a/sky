@@ -232,6 +232,10 @@ class StructureBase {
     return null;
   }
 
+  getSafeSpot(playerPos, radius) {
+    return null;
+  }
+
   resolveCollisions(pos, vel, radius) {
     let hitGround = false;
     let hardLandingVn = 0;

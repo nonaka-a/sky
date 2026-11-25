@@ -25,11 +25,44 @@ class SkyWorld {
     };
 
     this.rainbowMaterial = this._createRainbowMaterial();
+    this.buildingBuilder = new CloudBuildingBuilder();
 
     this._createSkyEnvironment();
 
     // お城の浮島（スタート地点正面から見える位置に常駐）
     this.castleIsland = this.addStructure(new CastleIsland(new THREE.Vector3(0, 3.5, -74)));
+
+    // お城の左右の噴水雲＋お城と繋ぐ虹の橋
+    this.leftFountainCloud = this.addStructure(
+      new FountainCloud('fountain_left', new THREE.Vector3(-26.5, 4.4, -72))
+    );
+    this.rightFountainCloud = this.addStructure(
+      new FountainCloud('fountain_right', new THREE.Vector3(26.5, 4.4, -72))
+    );
+
+    const leftCastleBridge = new RainbowBridge(
+      'castle|fountain_left',
+      new THREE.Vector3(-11.9, 4.62, -72.5),
+      new THREE.Vector3(-20.2, 4.95, -72.0),
+      this.rainbowMaterial,
+      null,
+      null
+    );
+    this.scene.add(leftCastleBridge.mesh);
+    this.rainbowBridges.push(leftCastleBridge);
+    this.bridgeIds.add('castle|fountain_left');
+
+    const rightCastleBridge = new RainbowBridge(
+      'castle|fountain_right',
+      new THREE.Vector3(11.9, 4.62, -72.5),
+      new THREE.Vector3(20.2, 4.95, -72.0),
+      this.rainbowMaterial,
+      null,
+      null
+    );
+    this.scene.add(rightCastleBridge.mesh);
+    this.rainbowBridges.push(rightCastleBridge);
+    this.bridgeIds.add('castle|fountain_right');
 
     // ワールドに1人だけのハートちゃんとスターくんを生成
     this.heartBuddy = new HeartBuddy(new THREE.Vector3(16, 5.5, -42));
@@ -186,7 +219,6 @@ class SkyWorld {
   }
 
   _syncStructureRainbowBridges() {
-    // 雲がアンロードされた橋を削除
     for (let i = this.rainbowBridges.length - 1; i >= 0; i--) {
       const br = this.rainbowBridges[i];
       const hasA = !br.cloudA || this.clouds.includes(br.cloudA);
@@ -228,7 +260,6 @@ class SkyWorld {
       const p0 = getCloudAnchor(c1, ux, uz);
       const p1 = getCloudAnchor(c2, -ux, -uz);
 
-      // 構造物の上を横切る場合は架けない
       const midX = (p0.x + p1.x) * 0.5;
       const midZ = (p0.z + p1.z) * 0.5;
       for (const st of this.structures) {
@@ -257,14 +288,12 @@ class SkyWorld {
         }
       }
 
-      // 構造物周辺の大きな雲同士をつなぐ
       for (let i = 0; i < nearIslands.length; i++) {
         for (let j = i + 1; j < nearIslands.length; j++) {
           addCloudBridge(nearIslands[i], nearIslands[j]);
         }
       }
 
-      // 手前側（+Z側）の大きな雲を優先し、なければ最寄りの大きな雲から構造物へ橋を架ける
       let connectCloud = null;
       let bestFrontDist = Infinity;
       for (const c of nearIslands) {
@@ -443,21 +472,21 @@ class SkyWorld {
     const chunkClouds = [];
 
     if (gx === 0 && gz === 0) {
-      chunkClouds.push(this._createCloud(0, 0, 0, 'island', 0));
-      chunkClouds.push(this._createCloud(0, 1.0, -14, 'normal', 1));
-      chunkClouds.push(this._createCloud(10, 2.0, -19, 'bouncy', 2));
-      chunkClouds.push(this._createCloud(-12, 1.5, -16, 'moving', 3));
-      chunkClouds.push(this._createCloud(15, 0.8, 4, 'island', 4));
-      chunkClouds.push(this._createCloud(-14, 1.0, 8, 'normal', 5));
-      chunkClouds.push(this._createCloud(0, 1.6, 16, 'bouncy', 6));
+      chunkClouds.push(this._createCloud(0, 0, 0, 'island', 0, false));
+      chunkClouds.push(this._createCloud(0, 1.0, -14, 'normal', 1, false));
+      chunkClouds.push(this._createCloud(10, 2.0, -19, 'bouncy', 2, false));
+      chunkClouds.push(this._createCloud(-12, 1.5, -16, 'moving', 3, false));
+      chunkClouds.push(this._createCloud(15, 0.8, 4, 'island', 4, 'single_corner'));
+      chunkClouds.push(this._createCloud(-14, 1.0, 8, 'normal', 5, 'single_small'));
+      chunkClouds.push(this._createCloud(0, 1.6, 16, 'bouncy', 6, false));
     } else if (gx === 0 && gz === -1) {
-      const heartIsland = this._createCloud(16, 1.5, -42, 'island', 77);
+      const heartIsland = this._createCloud(16, 1.5, -42, 'island', 77, false);
       heartIsland.isHeartHome = true;
       chunkClouds.push(heartIsland);
-      chunkClouds.push(this._createCloud(8, 1.2, -29, 'normal', 78));
-      chunkClouds.push(this._createCloud(-8, 1.8, -36, 'bouncy', 79));
-      chunkClouds.push(this._createCloud(-14, 1.2, -52, 'island', 80));
-      chunkClouds.push(this._createCloud(18, 2.2, -62, 'moving', 81));
+      chunkClouds.push(this._createCloud(8, 1.2, -29, 'normal', 78, 'single_small'));
+      chunkClouds.push(this._createCloud(-8, 1.8, -36, 'bouncy', 79, false));
+      chunkClouds.push(this._createCloud(-14, 1.2, -52, 'island', 80, 'cluster'));
+      chunkClouds.push(this._createCloud(18, 2.2, -62, 'moving', 81, false));
     } else {
       const count = 5 + Math.floor(this._hash(gx, gz, 1) * 3);
       for (let i = 0; i < count; i++) {
@@ -486,7 +515,7 @@ class SkyWorld {
         else if (rType > 0.44) type = 'bouncy';
         else if (rType > 0.28) type = 'moving';
 
-        chunkClouds.push(this._createCloud(wx, ry, wz, type, i + gx * 3 + gz * 7));
+        chunkClouds.push(this._createCloud(wx, ry, wz, type, i + gx * 3 + gz * 7, 'auto'));
       }
     }
 
@@ -497,7 +526,7 @@ class SkyWorld {
     }
   }
 
-  _createCloud(x, y, z, type, seed) {
+  _createCloud(x, y, z, type, seed, buildingMode = 'auto') {
     const group = new THREE.Group();
     group.position.set(x, y, z);
 
@@ -521,6 +550,15 @@ class SkyWorld {
 
     const h1 = this._hash(x, z, seed + 11);
     const h2 = this._hash(x, z, seed + 22);
+    const h3 = this._hash(x, z, seed + 33);
+
+    let wantsBuilding = false;
+    if (buildingMode && buildingMode !== 'auto') {
+      wantsBuilding = true;
+    } else if (buildingMode === 'auto') {
+      if (type === 'island' && h3 < 0.78) wantsBuilding = true;
+      else if (type === 'normal' && h3 < 0.56) wantsBuilding = true;
+    }
 
     if (type === 'island') {
       const baseR = 8.4 + h2 * 3.0;
@@ -530,11 +568,13 @@ class SkyWorld {
       addPuff(baseR * 0.4, -0.3, baseR * 0.58, baseR * 0.52, 1.7, baseR * 0.52, this.materials.island);
       addPuff(-baseR * 0.45, -0.3, -baseR * 0.55, baseR * 0.54, 1.8, baseR * 0.54, this.materials.island);
 
-      const star = new THREE.Mesh(this.starGeo, this.materials.gold);
-      star.position.set(baseR * 0.38, 3.1, -baseR * 0.28);
-      star.matrixAutoUpdate = false;
-      star.updateMatrix();
-      group.add(star);
+      if (!wantsBuilding) {
+        const star = new THREE.Mesh(this.starGeo, this.materials.gold);
+        star.position.set(baseR * 0.38, 3.1, -baseR * 0.28);
+        star.matrixAutoUpdate = false;
+        star.updateMatrix();
+        group.add(star);
+      }
     } else if (type === 'bouncy') {
       const r = 4.2 + h2 * 1.4;
       addPuff(0, 0, 0, r, 1.8, r, this.materials.bouncy);
@@ -546,7 +586,7 @@ class SkyWorld {
       addPuff(-r * 0.64, -0.15, 0.3, r * 0.62, 1.25, r * 0.62, this.materials.moving);
       addPuff(r * 0.64, -0.15, -0.3, r * 0.62, 1.25, r * 0.62, this.materials.moving);
     } else {
-      const shapeRoll = h1;
+      const shapeRoll = wantsBuilding ? (h1 < 0.5 ? 0.15 : 0.8) : h1;
       if (shapeRoll < 0.32) {
         const w = 6.8 + h2 * 2.4;
         const d = 5.8 + h1 * 2.2;
@@ -573,7 +613,7 @@ class SkyWorld {
     const moveAxis = h1 > 0.5 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
     const id = `${Math.round(x * 10)}_${Math.round(y * 10)}_${Math.round(z * 10)}`;
 
-    return {
+    const cloud = {
       id,
       type,
       group,
@@ -582,6 +622,8 @@ class SkyWorld {
       prevPos: new THREE.Vector3(x, y, z),
       deltaPos: new THREE.Vector3(),
       colliders,
+      buildingColliders: [],
+      safeLocalSpot: null,
       bobPhase: h2 * Math.PI * 2,
       movePhase: h1 * Math.PI * 2,
       moveSpeed: 0.85 + h2 * 0.45,
@@ -589,6 +631,12 @@ class SkyWorld {
       moveAxis,
       visualScale: 0.05
     };
+
+    if (wantsBuilding && (type === 'island' || type === 'normal')) {
+      this.buildingBuilder.attachBuildingsToCloud(cloud, seed + x * 0.37 + z * 0.71, buildingMode);
+    }
+
+    return cloud;
   }
 
   getShadowGroundInfo(px, py, pz) {
@@ -639,6 +687,14 @@ class SkyWorld {
             this._tmpShadowNormal.set(normX, normY, normZ).normalize();
             bestInfo = { y: surfaceY, normal: this._tmpShadowNormal };
           }
+        }
+      }
+
+      if (cloud.buildingColliders && cloud.buildingColliders.length > 0) {
+        const bShadow = CloudBuildingBuilder.getShadowInfo(cloud, px, py, pz, this._tmpBridgeNormal);
+        if (bShadow && (bestInfo === null || bShadow.y > bestInfo.y)) {
+          this._tmpShadowNormal.copy(bShadow.normal);
+          bestInfo = { y: bShadow.y, normal: this._tmpShadowNormal };
         }
       }
     }

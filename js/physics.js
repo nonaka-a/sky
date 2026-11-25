@@ -211,14 +211,38 @@ class PhysicsSystem {
               if (ny > 0.65) {
                 const mainCol = cloud.colliders[0];
                 player.safeCloud = cloud;
-                player.safeLocalOffset.set(
-                  mainCol.offset.x,
-                  mainCol.offset.y + mainCol.ry + r + 0.6,
-                  mainCol.offset.z
-                );
+                if (cloud.safeLocalSpot) {
+                  player.safeLocalOffset.set(
+                    cloud.safeLocalSpot.x,
+                    cloud.safeLocalSpot.y + r + 0.6,
+                    cloud.safeLocalSpot.z
+                  );
+                } else {
+                  player.safeLocalOffset.set(
+                    mainCol.offset.x,
+                    mainCol.offset.y + mainCol.ry + r + 0.6,
+                    mainCol.offset.z
+                  );
+                }
                 player.safeFallbackPos.copy(cloud.position).add(player.safeLocalOffset);
               }
             }
+          }
+        }
+      }
+
+      if (cloud.buildingColliders && cloud.buildingColliders.length > 0) {
+        const bHit = CloudBuildingBuilder.resolveCloudBuildings(cloud, p, player.velocity, r);
+        if (bHit.hitGround) {
+          player.isGrounded = true;
+          player.groundCloud = cloud;
+          player.airJumpsLeft = 1;
+
+          if (!wasGrounded && bHit.hardLandingVn < -4.5) {
+            player.triggerSquash(0.66);
+            player.setExpression('land', 0.25);
+            sound.playLand();
+            sendSeFn('land');
           }
         }
       }

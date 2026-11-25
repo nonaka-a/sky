@@ -675,24 +675,30 @@ class StarBuddy {
   placeOnCloud(cloud) {
     if (!cloud) return;
     const col = cloud.colliders[0];
-    const x = cloud.position.x + col.offset.x;
-    const y = cloud.position.y + col.offset.y + col.ry + this.radius + 0.5;
-    const z = cloud.position.z + col.offset.z;
+    const lx = cloud.safeLocalSpot ? cloud.safeLocalSpot.x : col.offset.x;
+    const ly = (cloud.safeLocalSpot ? cloud.safeLocalSpot.y : col.offset.y + col.ry) + this.radius + 0.5;
+    const lz = cloud.safeLocalSpot ? cloud.safeLocalSpot.z : col.offset.z;
+    const x = cloud.position.x + lx;
+    const y = cloud.position.y + ly;
+    const z = cloud.position.z + lz;
     this.position.set(x, y, z);
     this.velocity.set(0, 0, 0);
     this.isGrounded = false;
     this.groundCloud = cloud;
     this.safeCloud = cloud;
-    this.safeLocalOffset.set(col.offset.x, col.offset.y + col.ry + this.radius + 0.5, col.offset.z);
+    this.safeLocalOffset.set(lx, ly, lz);
     this.safeFallbackPos.copy(this.position);
     this.group.position.copy(this.position);
   }
 
   _launchToCloud(targetCloud, flightTime = null) {
     const col = targetCloud.colliders[0];
-    const tx = targetCloud.position.x + col.offset.x;
-    const ty = targetCloud.position.y + col.offset.y + col.ry + this.radius + 0.2;
-    const tz = targetCloud.position.z + col.offset.z;
+    const lx = targetCloud.safeLocalSpot ? targetCloud.safeLocalSpot.x : col.offset.x;
+    const ly = (targetCloud.safeLocalSpot ? targetCloud.safeLocalSpot.y : col.offset.y + col.ry) + this.radius + 0.2;
+    const lz = targetCloud.safeLocalSpot ? targetCloud.safeLocalSpot.z : col.offset.z;
+    const tx = targetCloud.position.x + lx;
+    const ty = targetCloud.position.y + ly;
+    const tz = targetCloud.position.z + lz;
 
     const horizDist = Math.hypot(tx - this.position.x, tz - this.position.z);
     const T = flightTime || THREE.MathUtils.clamp(0.65 + horizDist * 0.025, 0.72, 1.32);
@@ -1053,14 +1059,33 @@ class StarBuddy {
               if (ny > 0.65) {
                 const mainCol = cloud.colliders[0];
                 this.safeCloud = cloud;
-                this.safeLocalOffset.set(
-                  mainCol.offset.x,
-                  mainCol.offset.y + mainCol.ry + r + 0.5,
-                  mainCol.offset.z
-                );
+                if (cloud.safeLocalSpot) {
+                  this.safeLocalOffset.set(
+                    cloud.safeLocalSpot.x,
+                    cloud.safeLocalSpot.y + r + 0.5,
+                    cloud.safeLocalSpot.z
+                  );
+                } else {
+                  this.safeLocalOffset.set(
+                    mainCol.offset.x,
+                    mainCol.offset.y + mainCol.ry + r + 0.5,
+                    mainCol.offset.z
+                  );
+                }
                 this.safeFallbackPos.copy(cloud.position).add(this.safeLocalOffset);
               }
             }
+          }
+        }
+      }
+
+      if (cloud.buildingColliders && cloud.buildingColliders.length > 0) {
+        const bHit = CloudBuildingBuilder.resolveCloudBuildings(cloud, p, this.velocity, r);
+        if (bHit.hitGround) {
+          this.isGrounded = true;
+          this.groundCloud = cloud;
+          if (!wasGrounded && bHit.hardLandingVn < -4.0) {
+            this.triggerSquash(0.68);
           }
         }
       }

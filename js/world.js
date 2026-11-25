@@ -20,6 +20,8 @@ class SkyWorld {
       normalShade: new THREE.MeshToonMaterial({ color: 0xedf6ff }),
       bouncy: new THREE.MeshToonMaterial({ color: 0xff70a6 }),
       moving: new THREE.MeshToonMaterial({ color: 0x8ae0ff }),
+      yellow: new THREE.MeshToonMaterial({ color: 0xffe878 }),
+      yellowShade: new THREE.MeshToonMaterial({ color: 0xfad45a }),
       island: new THREE.MeshToonMaterial({ color: 0xffffff }),
       gold: new THREE.MeshToonMaterial({ color: 0xffd166 })
     };
@@ -204,7 +206,7 @@ class SkyWorld {
     let bestScore = Infinity;
 
     for (const cloud of this.clouds) {
-      if (cloud.type === 'bouncy') continue;
+      if (cloud.type === 'bouncy' || cloud.type === 'yellow') continue;
       const d = Math.hypot(cloud.position.x - playerPos.x, cloud.position.z - playerPos.z);
       const score = Math.abs(d - 36);
       if (d > 14 && score < bestScore) {
@@ -390,6 +392,13 @@ class SkyWorld {
         cloud.position.y = cloud.basePos.y + Math.sin(this.time * 1.1 + cloud.bobPhase) * 0.14;
       }
 
+      if (cloud.type === 'yellow') {
+        const tPulse = 0.5 + 0.5 * Math.sin(this.time * cloud.pulseSpeed + cloud.pulsePhase);
+        cloud.pulseScale = THREE.MathUtils.lerp(cloud.pulseMin, cloud.pulseMax, tPulse);
+      } else {
+        cloud.pulseScale = 1.0;
+      }
+
       cloud.deltaPos.subVectors(cloud.position, cloud.prevPos);
       cloud.group.position.copy(cloud.position);
 
@@ -397,7 +406,7 @@ class SkyWorld {
       const appearFactor = THREE.MathUtils.clamp(1.0 - (dist - 72) / 38, 0.01, 1.0);
       const targetScale = THREE.MathUtils.smoothstep(appearFactor, 0, 1);
       cloud.visualScale = THREE.MathUtils.lerp(cloud.visualScale, targetScale, Math.min(1, dt * 6));
-      cloud.group.scale.setScalar(cloud.visualScale);
+      cloud.group.scale.setScalar(cloud.visualScale * cloud.pulseScale);
       cloud.group.visible = cloud.visualScale > 0.03;
     }
 
@@ -468,6 +477,23 @@ class SkyWorld {
     return null;
   }
 
+  _canPlaceYellowCloud(wx, wz, chunkClouds) {
+    for (const st of this.structures) {
+      if (st.noCloudRadius > 0) {
+        if (Math.hypot(wx - st.position.x, wz - st.position.z) < st.noCloudRadius) {
+          return false;
+        }
+      }
+    }
+    for (const c of chunkClouds) {
+      const minGap = (c.colliders[0] ? c.colliders[0].rx : 4.5) + 5.2;
+      if (Math.hypot(wx - c.basePos.x, wz - c.basePos.z) < minGap) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   _generateChunk(gx, gz, key) {
     const chunkClouds = [];
 
@@ -479,6 +505,11 @@ class SkyWorld {
       chunkClouds.push(this._createCloud(15, 0.8, 4, 'island', 4, 'single_corner'));
       chunkClouds.push(this._createCloud(-14, 1.0, 8, 'normal', 5, 'single_small'));
       chunkClouds.push(this._createCloud(0, 1.6, 16, 'bouncy', 6, false));
+
+      // 既存の雲の間の空きスペースに黄色い雲を配置
+      chunkClouds.push(this._createCloud(10, 1.5, -7, 'yellow', 201, false));
+      chunkClouds.push(this._createCloud(-15, 1.4, -3.5, 'yellow', 202, false));
+      chunkClouds.push(this._createCloud(9.5, 1.5, 15.5, 'yellow', 203, false));
     } else if (gx === 0 && gz === -1) {
       const heartIsland = this._createCloud(16, 1.5, -42, 'island', 77, false);
       heartIsland.isHeartHome = true;
@@ -487,6 +518,9 @@ class SkyWorld {
       chunkClouds.push(this._createCloud(-8, 1.8, -36, 'bouncy', 79, false));
       chunkClouds.push(this._createCloud(-14, 1.2, -52, 'island', 80, 'cluster'));
       chunkClouds.push(this._createCloud(18, 2.2, -62, 'moving', 81, false));
+
+      // 既存の雲の間の空きスペースに黄色い雲を配置
+      chunkClouds.push(this._createCloud(-2, 1.5, -45, 'yellow', 204, false));
     } else {
       const count = 5 + Math.floor(this._hash(gx, gz, 1) * 3);
       for (let i = 0; i < count; i++) {
@@ -516,6 +550,23 @@ class SkyWorld {
         else if (rType > 0.28) type = 'moving';
 
         chunkClouds.push(this._createCloud(wx, ry, wz, type, i + gx * 3 + gz * 7, 'auto'));
+      }
+
+      // 既存雲を生成した後で、重ならない隙間に黄色い雲を配置
+      for (let j = 0; j < 2; j++) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const seedBase = 300 + j * 20 + attempt * 5;
+          const rx = (this._hash(gx, gz, seedBase + 1) - 0.5) * (this.chunkSize - 6);
+          const rz = (this._hash(gx, gz, seedBase + 2) - 0.5) * (this.chunkSize - 6);
+          const ry = (this._hash(gx, gz, seedBase + 3) - 0.45) * 8.0;
+          const wx = gx * this.chunkSize + rx;
+          const wz = gz * this.chunkSize + rz;
+
+          if (this._canPlaceYellowCloud(wx, wz, chunkClouds)) {
+            chunkClouds.push(this._createCloud(wx, ry, wz, 'yellow', seedBase + gx * 5 + gz * 11, false));
+            break;
+          }
+        }
       }
     }
 
@@ -585,6 +636,11 @@ class SkyWorld {
       addPuff(0, 0, 0, r, 1.6, r * 0.92, this.materials.moving);
       addPuff(-r * 0.64, -0.15, 0.3, r * 0.62, 1.25, r * 0.62, this.materials.moving);
       addPuff(r * 0.64, -0.15, -0.3, r * 0.62, 1.25, r * 0.62, this.materials.moving);
+    } else if (type === 'yellow') {
+      const r = 3.2 + h2 * 0.9;
+      addPuff(0, 0, 0, r, 1.45, r, this.materials.yellow);
+      addPuff(-r * 0.52, -0.15, 0.4, r * 0.62, 1.15, r * 0.62, this.materials.yellowShade);
+      addPuff(r * 0.52, -0.15, -0.4, r * 0.62, 1.15, r * 0.62, this.materials.yellowShade);
     } else {
       const shapeRoll = wantsBuilding ? (h1 < 0.5 ? 0.15 : 0.8) : h1;
       if (shapeRoll < 0.32) {
@@ -629,6 +685,11 @@ class SkyWorld {
       moveSpeed: 0.85 + h2 * 0.45,
       moveRange: 3.5 + h1 * 2.5,
       moveAxis,
+      pulseMin: 0.55,
+      pulseMax: 1.25,
+      pulseSpeed: 0.38 + h2 * 0.16,
+      pulsePhase: h1 * Math.PI * 2,
+      pulseScale: 1.0,
       visualScale: 0.05
     };
 
@@ -665,25 +726,30 @@ class SkyWorld {
         continue;
       }
 
+      const ps = cloud.pulseScale || 1.0;
+
       for (const col of cloud.colliders) {
-        const cx = cloud.position.x + col.offset.x;
-        const cy = cloud.position.y + col.offset.y;
-        const cz = cloud.position.z + col.offset.z;
+        const rx = col.rx * ps;
+        const ry = col.ry * ps;
+        const rz = col.rz * ps;
+        const cx = cloud.position.x + col.offset.x * ps;
+        const cy = cloud.position.y + col.offset.y * ps;
+        const cz = cloud.position.z + col.offset.z * ps;
 
         const dx = px - cx;
         const dz = pz - cz;
-        const nx = dx / col.rx;
-        const nz = dz / col.rz;
+        const nx = dx / rx;
+        const nz = dz / rz;
         const sq = nx * nx + nz * nz;
 
         if (sq < 0.98) {
-          const dy = col.ry * Math.sqrt(1.0 - sq);
+          const dy = ry * Math.sqrt(1.0 - sq);
           const surfaceY = cy + dy;
 
           if (surfaceY <= py + 0.3 && (bestInfo === null || surfaceY > bestInfo.y)) {
-            const normX = dx / (col.rx * col.rx);
-            const normY = dy / (col.ry * col.ry);
-            const normZ = dz / (col.rz * col.rz);
+            const normX = dx / (rx * rx);
+            const normY = dy / (ry * ry);
+            const normZ = dz / (rz * rz);
             this._tmpShadowNormal.set(normX, normY, normZ).normalize();
             bestInfo = { y: surfaceY, normal: this._tmpShadowNormal };
           }

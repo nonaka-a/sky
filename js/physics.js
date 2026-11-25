@@ -128,22 +128,27 @@ class PhysicsSystem {
         continue;
       }
 
+      const ps = cloud.pulseScale || 1.0;
+
       for (const col of cloud.colliders) {
-        const cx = cloud.position.x + col.offset.x;
-        const cy = cloud.position.y + col.offset.y;
-        const cz = cloud.position.z + col.offset.z;
+        const rx = col.rx * ps;
+        const ry = col.ry * ps;
+        const rz = col.rz * ps;
+        const cx = cloud.position.x + col.offset.x * ps;
+        const cy = cloud.position.y + col.offset.y * ps;
+        const cz = cloud.position.z + col.offset.z * ps;
 
         const dx = p.x - cx;
         const dy = p.y - cy;
         const dz = p.z - cz;
 
-        const maxR = Math.max(col.rx, col.ry, col.rz) + r;
+        const maxR = Math.max(rx, ry, rz) + r;
         if (dx * dx + dy * dy + dz * dz > maxR * maxR) continue;
 
         const k0 = Math.sqrt(
-          (dx / col.rx) * (dx / col.rx) +
-          (dy / col.ry) * (dy / col.ry) +
-          (dz / col.rz) * (dz / col.rz)
+          (dx / rx) * (dx / rx) +
+          (dy / ry) * (dy / ry) +
+          (dz / rz) * (dz / rz)
         );
 
         if (k0 < 0.0001) continue;
@@ -152,9 +157,9 @@ class PhysicsSystem {
         const sy = dy / k0;
         const sz = dz / k0;
 
-        const nxRaw = dx / (col.rx * col.rx);
-        const nyRaw = dy / (col.ry * col.ry);
-        const nzRaw = dz / (col.rz * col.rz);
+        const nxRaw = dx / (rx * rx);
+        const nyRaw = dy / (ry * ry);
+        const nzRaw = dz / (rz * rz);
         const nLen = Math.hypot(nxRaw, nyRaw, nzRaw) || 1;
         const nx = nxRaw / nLen;
         const ny = nyRaw / nLen;
@@ -210,18 +215,19 @@ class PhysicsSystem {
 
               if (ny > 0.65) {
                 const mainCol = cloud.colliders[0];
+                const safeScale = cloud.type === 'yellow' ? (cloud.pulseMax || 1.25) : 1.0;
                 player.safeCloud = cloud;
                 if (cloud.safeLocalSpot) {
                   player.safeLocalOffset.set(
-                    cloud.safeLocalSpot.x,
-                    cloud.safeLocalSpot.y + r + 0.6,
-                    cloud.safeLocalSpot.z
+                    cloud.safeLocalSpot.x * safeScale,
+                    cloud.safeLocalSpot.y * safeScale + r + 0.6,
+                    cloud.safeLocalSpot.z * safeScale
                   );
                 } else {
                   player.safeLocalOffset.set(
-                    mainCol.offset.x,
-                    mainCol.offset.y + mainCol.ry + r + 0.6,
-                    mainCol.offset.z
+                    mainCol.offset.x * safeScale,
+                    (mainCol.offset.y + mainCol.ry) * safeScale + r + 0.6,
+                    mainCol.offset.z * safeScale
                   );
                 }
                 player.safeFallbackPos.copy(cloud.position).add(player.safeLocalOffset);

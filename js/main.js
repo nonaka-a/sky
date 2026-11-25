@@ -1,47 +1,6 @@
 class MaimaiGame {
   constructor() {
     this.canvas = document.getElementById('game-canvas');
-    this.hud = document.getElementById('hud');
-    this.titleScreen = document.getElementById('title-screen');
-    this.joinModal = document.getElementById('join-modal');
-    this.chatModal = document.getElementById('chat-modal');
-    this.settingsModal = document.getElementById('settings-modal');
-    this.respawnFlash = document.getElementById('respawn-flash');
-    this.dialogueBox = document.getElementById('dialogue-box');
-    this.dialogueSpeaker = document.getElementById('dialogue-speaker');
-    this.dialogueText = document.getElementById('dialogue-text');
-    this.dialogueAvatarHeart = document.getElementById('dialogue-avatar-heart');
-    this.dialogueAvatarStar = document.getElementById('dialogue-avatar-star');
-    this.dialogueChoices = document.getElementById('dialogue-choices');
-    this.btnDialogueYes = document.getElementById('btn-dialogue-yes');
-    this.btnDialogueNo = document.getElementById('btn-dialogue-no');
-
-    this.roomBadge = document.getElementById('room-badge');
-    this.roomIdValue = document.getElementById('room-id-value');
-    this.roomPartnerStatus = document.getElementById('room-partner-status');
-    this.toastBanner = document.getElementById('toast-banner');
-    this.sliderTimerEl = document.getElementById('slider-timer');
-    this.sliderTimerValueEl = document.getElementById('slider-timer-value');
-    this.btnWarpPartner = document.getElementById('btn-warp-partner');
-    this.btnChat = document.getElementById('btn-chat');
-    this.btnChatClear = document.getElementById('btn-chat-clear');
-    this.joystickKnob = document.getElementById('joystick-knob');
-
-    this.localBubble = document.getElementById('local-chat-bubble');
-    this.localBubbleText = document.getElementById('local-chat-bubble-text');
-    this.remoteBubble = document.getElementById('remote-chat-bubble');
-    this.remoteBubbleText = document.getElementById('remote-chat-bubble-text');
-    this.portalInfoBubble = document.getElementById('portal-info-bubble');
-
-    this.inputRoomId = document.getElementById('input-room-id');
-    this.joinErrorMsg = document.getElementById('join-error-msg');
-    this.titleStatusMsg = document.getElementById('title-status-msg');
-
-    this.inputChatText = document.getElementById('input-chat-text');
-    this.chatCharCount = document.getElementById('chat-char-count');
-
-    this.soundStatusEl = document.getElementById('sound-status');
-    this.fullscreenStatusEl = document.getElementById('fullscreen-status');
 
     this.isPlaying = false;
     this.isPaused = false;
@@ -59,15 +18,11 @@ class MaimaiGame {
     this.remoteHeartState = null;
     this.remoteStarState = null;
     this.netSendTimer = 0;
-    this.bumpCooldown = 0;
-    this.rideCooldown = 0;
-    this.toastTimer = 0;
 
     // NPCふれあい状態
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
     this.isStarAsking = false;
-    this.dialogueTimer = 0;
 
     // スカイスライダー用カメラオフセット
     this.sliderCamYawOffset = 0;
@@ -75,11 +30,7 @@ class MaimaiGame {
 
     // 計算用一時オブジェクト（GC抑制）
     this._boundLoop = (t) => this._loop(t);
-    this._tmpForward = new THREE.Vector3();
-    this._tmpRight = new THREE.Vector3();
-    this._tmpWishDir = new THREE.Vector3();
     this._tmpCamTarget = new THREE.Vector3();
-    this._tmpBubblePos = new THREE.Vector3();
 
     // Three.js 基本セットアップ
     this.renderer = new THREE.WebGLRenderer({
@@ -113,11 +64,13 @@ class MaimaiGame {
     this.miniSkySlider = new MiniSkySlider();
     this.player = new Player(this.scene, { colorTheme: 'red' });
     this.controls = new ControlsManager();
+    this.physics = new PhysicsSystem();
+    this.ui = new UIManager(this);
 
     this.world.starBuddy.onTagStarted = () => {
       if (!this.isPlaying) return;
       this.sound.playStarGreet();
-      this._showDialogue('ボクをつかまえてね！', 4.0, 'star', false);
+      this.ui.showDialogue('ボクをつかまえてね！', 4.0, 'star', false);
       if (this.gameMode === 'host' && this.network.isConnected) {
         this.network.send({ type: 'star_msg', msg: 'ボクをつかまえてね！', se: 'star' });
       }
@@ -126,8 +79,7 @@ class MaimaiGame {
     this.lastTime = performance.now();
 
     this._bindNetworkEvents();
-    this._bindUI();
-    window.addEventListener('resize', () => this._onResize());
+    window.addEventListener('resize', () => this.onResize());
 
     this.world.updateChunks(this.player.position, 0.016);
     this._updateCamera(1.0);
@@ -142,7 +94,7 @@ class MaimaiGame {
       !!this.remotePlayer &&
       this.currentArea !== 'mini_skySlider' &&
       this.remoteArea !== 'mini_skySlider';
-    this.btnWarpPartner.classList.toggle('hidden', !canWarp);
+    this.ui.updateWarpPartnerVisibility(canWarp);
   }
 
   _getActiveScene() {
@@ -158,13 +110,13 @@ class MaimaiGame {
     return THREE.MathUtils.clamp(1 - dist / 80, 0.18, 0.8);
   }
 
-  _sendSe(name) {
+  sendSe(name) {
     if (this.network.isConnected) {
       this.network.send({ type: 'se', name });
     }
   }
 
-  _sendStatePacket() {
+  sendStatePacket() {
     if (this.gameMode === 'solo' || !this.network.isConnected) return;
     const p = this.player.position;
     const v = this.player.velocity;
@@ -194,12 +146,11 @@ class MaimaiGame {
       const partnerTheme = this.gameMode === 'host' ? 'yellow' : 'red';
       this._spawnRemotePlayer(partnerTheme);
 
-      this.roomPartnerStatus.textContent = '2人プレイ中';
-      this.roomPartnerStatus.classList.add('online');
+      this.ui.setPartnerStatus('2人プレイ中', true);
       this._updateWarpPartnerVisibility();
 
       if (this.gameMode === 'host') {
-        this._showToast('きいろまいまいが遊びに来たよ！', 3.2);
+        this.ui.showToast('きいろまいまいが遊びに来たよ！', 3.2);
         this.sound.playHeartGreet();
         this.network.send({
           type: 'welcome',
@@ -211,7 +162,7 @@ class MaimaiGame {
           star: this.world.starBuddy.getSyncState()
         });
       } else if (this.gameMode === 'guest') {
-        this._showToast('あかまいまいと合流しました！', 3.0);
+        this.ui.showToast('あかまいまいと合流しました！', 3.0);
         this.sound.playHeartGreet();
       }
     };
@@ -220,14 +171,13 @@ class MaimaiGame {
       this._removeRemotePlayer();
       this.player.isRidingPartner = false;
       this.remoteArea = 'sky';
-      this.btnWarpPartner.classList.add('hidden');
-      this.roomPartnerStatus.textContent = 'あいてが退出しました';
-      this.roomPartnerStatus.classList.remove('online');
+      this.ui.updateWarpPartnerVisibility(false);
+      this.ui.setPartnerStatus('あいてが退出しました', false);
 
       if (this.gameMode === 'guest' && this.isPlaying) {
-        this._showToast('ホストとの通信が切れました', 3.5);
+        this.ui.showToast('ホストとの通信が切れました', 3.5);
       } else if (this.gameMode === 'host' && this.isPlaying) {
-        this._showToast('きいろまいまいが退出しました', 3.0);
+        this.ui.showToast('きいろまいまいが退出しました', 3.0);
       }
     };
 
@@ -243,7 +193,7 @@ class MaimaiGame {
 
         if (hostArea === 'castle') {
           this.currentArea = 'castle';
-          this.sliderTimerEl.classList.add('hidden');
+          this.ui.hideSliderTimer();
           this.player.setScene(this.castleInterior.scene);
           if (this.remotePlayer) this.remotePlayer.setScene(this.castleInterior.scene);
           const spawnPos = data.hp
@@ -257,11 +207,9 @@ class MaimaiGame {
           this.player.setScene(this.miniSkySlider.scene);
           if (this.remotePlayer) this.remotePlayer.setScene(this.miniSkySlider.scene);
           this.miniSkySlider.startNewRun(this.player);
-          this.sliderTimerEl.classList.remove('hidden');
-          this.sliderTimerEl.classList.remove('finished');
-          this.sliderTimerValueEl.textContent = '00:00.00';
+          this.ui.showSliderTimer('00:00.00', false);
         } else if (data.hp) {
-          this.sliderTimerEl.classList.add('hidden');
+          this.ui.hideSliderTimer();
           const spawnPos = new THREE.Vector3(data.hp[0] + 1.4, data.hp[1] + 2.2, data.hp[2]);
           this.world.updateChunks(spawnPos, 0.016, true, this.remoteHeartState, this.remoteStarState);
           this.player.resetTo(spawnPos);
@@ -296,7 +244,7 @@ class MaimaiGame {
           const triggerPos = this.remotePlayer ? this.remotePlayer.position : this.player.position;
           this.world.starBuddy.startTagPrepare(triggerPos, this.world);
           this.isStarAsking = false;
-          this._showDialogue('じゃあ、鬼ごっこしよう！', 4.0, 'star', false);
+          this.ui.showDialogue('じゃあ、鬼ごっこしよう！', 4.0, 'star', false);
           this.sound.playStarGreet();
           this.network.send({ type: 'star_msg', msg: 'じゃあ、鬼ごっこしよう！', se: 'star' });
         } else if (data.action === 'catch' && this.world.starBuddy.tagState === 'chasing') {
@@ -304,7 +252,7 @@ class MaimaiGame {
         }
       } else if (data.type === 'star_msg' && this.gameMode === 'guest') {
         this.isStarAsking = false;
-        this._showDialogue(data.msg, 4.5, 'star', false);
+        this.ui.showDialogue(data.msg, 4.5, 'star', false);
         if (data.se === 'star_win') this.sound.playStarWin();
         else if (data.se === 'star') this.sound.playStarGreet();
       } else if (data.type === 'dj') {
@@ -345,250 +293,13 @@ class MaimaiGame {
     }
     this.remoteHeartState = null;
     this.remoteStarState = null;
-    this.remoteBubble.classList.add('hidden');
+    this.ui.hideRemoteBubble();
   }
 
-  _bindUI() {
-    const stopProp = (el) => {
-      el.addEventListener('pointerdown', (e) => e.stopPropagation());
-    };
-    stopProp(document.getElementById('btn-settings'));
-    stopProp(this.btnWarpPartner);
-    stopProp(this.btnChat);
-    stopProp(this.btnChatClear);
-    stopProp(this.roomBadge);
-    stopProp(this.btnDialogueYes);
-    stopProp(this.btnDialogueNo);
-
-    this.btnDialogueYes.addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      if (!this.isPlaying || !this.isStarAsking) return;
-      this.sound.playStarGreet();
-      this._acceptStarTag();
-    });
-
-    this.btnDialogueNo.addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      if (!this.isPlaying || !this.isStarAsking) return;
-      this.sound.playClick();
-      this.isStarAsking = false;
-      this.world.starBuddy.cancelAsking();
-      this._hideDialogue();
-    });
-
-    document.getElementById('btn-start').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this.sound.startBgm();
-      this.network.disconnect();
-      this.startGame('solo');
-    });
-
-    document.getElementById('btn-host-room').addEventListener('click', async (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this.sound.startBgm();
-      this._setTitleStatus('ルームを作成中…');
-      try {
-        const roomId = await this.network.hostRoom();
-        this._setTitleStatus('');
-        this.startGame('host', roomId);
-      } catch (err) {
-        this._setTitleStatus(err.message || 'ルームの作成に失敗しました');
-      }
-    });
-
-    document.getElementById('btn-open-join').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this.joinErrorMsg.classList.add('hidden');
-      this.inputRoomId.value = '';
-      this.joinModal.classList.remove('hidden');
-      setTimeout(() => this.inputRoomId.focus(), 100);
-    });
-
-    document.getElementById('btn-join-cancel').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this.joinModal.classList.add('hidden');
-    });
-
-    document.getElementById('btn-join-confirm').addEventListener('click', async (e) => {
-      const btn = e.currentTarget;
-      btn.blur();
-      this.sound.playClick();
-      this.sound.startBgm();
-      btn.disabled = true;
-      this.joinErrorMsg.textContent = 'せつぞく中…';
-      this.joinErrorMsg.classList.remove('hidden');
-
-      try {
-        const roomId = await this.network.joinRoom(this.inputRoomId.value);
-        this.joinModal.classList.add('hidden');
-        this.joinErrorMsg.classList.add('hidden');
-        this.startGame('guest', roomId);
-      } catch (err) {
-        this.joinErrorMsg.textContent = err.message || '接続に失敗しました';
-        this.joinErrorMsg.classList.remove('hidden');
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    document.getElementById('btn-copy-room').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      const id = this.roomIdValue.textContent;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(id).then(() => {
-          this._showToast(`ID「${id}」をコピーしました`, 2.2);
-        }).catch(() => {
-          this._showToast(`ID: ${id}`, 2.2);
-        });
-      } else {
-        this._showToast(`ID: ${id}`, 2.2);
-      }
-    });
-
-    this.btnWarpPartner.addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      if (!this.isPlaying || this.isPaused || !this.remotePlayer || this.isAreaTransitioning) return;
-      this.sound.playRespawn();
-      this._sendSe('respawn');
-      this._warpToPartner();
-    });
-
-    // チャットボタン・消去ボタン・モーダル
-    this.btnChat.addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      if (!this.isPlaying || this.isPaused) return;
-      this.sound.playClick();
-      this.isPaused = true;
-      this.controls.reset();
-      this.inputChatText.value = '';
-      this._updateChatCounter();
-      this.chatModal.classList.remove('hidden');
-      setTimeout(() => this.inputChatText.focus(), 80);
-    });
-
-    this.btnChatClear.addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      if (!this.isPlaying || this.isPaused) return;
-      this.sound.playClick();
-      this.player.setChatText('');
-      this.btnChatClear.classList.add('hidden');
-      this._sendStatePacket();
-      this._updateChatBubbles();
-    });
-
-    this.inputChatText.addEventListener('input', () => {
-      const chars = [...this.inputChatText.value];
-      if (chars.length > 20) {
-        this.inputChatText.value = chars.slice(0, 20).join('');
-      }
-      this._updateChatCounter();
-    });
-
-    this.inputChatText.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.isComposing) {
-        e.preventDefault();
-        this._submitChat();
-      }
-    });
-
-    document.getElementById('btn-chat-send').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this._submitChat();
-    });
-
-    document.getElementById('btn-chat-cancel').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this._closeChatModal();
-    });
-
-    document.getElementById('btn-settings').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this.isPaused = true;
-      this.settingsModal.classList.remove('hidden');
-    });
-
-    document.getElementById('btn-close-settings').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this.isPaused = false;
-      this.settingsModal.classList.add('hidden');
-    });
-
-    document.getElementById('btn-toggle-sound').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      const next = !this.sound.enabled;
-      this.sound.setEnabled(next);
-      if (next) this.sound.playClick();
-      this.soundStatusEl.textContent = next ? 'ON' : 'OFF';
-      this.soundStatusEl.classList.toggle('on', next);
-    });
-
-    document.getElementById('btn-toggle-fullscreen').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this._toggleFullscreen();
-    });
-
-    const btnClearTimes = document.getElementById('btn-clear-slider-times');
-    const clearLabel = document.getElementById('clear-slider-label');
-    const clearBadge = document.getElementById('clear-slider-badge');
-    let clearConfirmTimer = null;
-    let clearConfirmArmed = false;
-
-    const resetClearButtonState = () => {
-      clearConfirmArmed = false;
-      if (clearConfirmTimer) {
-        clearTimeout(clearConfirmTimer);
-        clearConfirmTimer = null;
-      }
-      clearLabel.textContent = 'タイムきろくをけす';
-      clearBadge.textContent = 'RESET';
-      clearBadge.classList.remove('on');
-    };
-
-    btnClearTimes.addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      if (!clearConfirmArmed) {
-        clearConfirmArmed = true;
-        clearLabel.textContent = 'ほんとうにけす？';
-        clearBadge.textContent = 'もう1回';
-        clearBadge.classList.add('on');
-        clearConfirmTimer = setTimeout(resetClearButtonState, 3500);
-        return;
-      }
-      this.miniSkySlider.clearBestTimes();
-      resetClearButtonState();
-      this.isPaused = false;
-      this.settingsModal.classList.add('hidden');
-      this._showToast('タイムアタックのきろくをけしました', 2.8);
-    });
-
-    document.getElementById('btn-settings').addEventListener('click', resetClearButtonState);
-    document.getElementById('btn-close-settings').addEventListener('click', resetClearButtonState);
-
-    document.getElementById('btn-back-title').addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      this.sound.playClick();
-      this.backToTitle();
-    });
-
-    document.addEventListener('fullscreenchange', () => this._syncFullscreenUI());
-    document.addEventListener('webkitfullscreenchange', () => this._syncFullscreenUI());
-  }
-
-  _acceptStarTag() {
+  acceptStarTag() {
     this.isStarAsking = false;
     this.isTouchingStar = true;
-    this._showDialogue('じゃあ、鬼ごっこしよう！', 5.0, 'star', false);
+    this.ui.showDialogue('じゃあ、鬼ごっこしよう！', 5.0, 'star', false);
 
     if (this.gameMode === 'guest' && this.network.isConnected) {
       this.network.send({ type: 'star_tag', action: 'start' });
@@ -606,50 +317,10 @@ class MaimaiGame {
     this.world.starBuddy.catchInTag();
     this.player.setExpression('happy', 1.5);
     this.sound.playStarWin();
-    this._showDialogue('すごいね！まいまいのかち！', 4.5, 'star', false);
+    this.ui.showDialogue('すごいね！まいまいのかち！', 4.5, 'star', false);
     if (notifyGuest && this.gameMode === 'host' && this.network.isConnected) {
       this.network.send({ type: 'star_msg', msg: 'すごいね！まいまいのかち！', se: 'star_win' });
     }
-  }
-
-  _updateChatCounter() {
-    const len = [...this.inputChatText.value].length;
-    this.chatCharCount.textContent = `${len} / 20`;
-  }
-
-  _submitChat() {
-    const trimmed = this.inputChatText.value.trim();
-    if (!trimmed) {
-      this._closeChatModal();
-      return;
-    }
-    this.player.setChatText(trimmed);
-    this.btnChatClear.classList.remove('hidden');
-    this._sendStatePacket();
-    this._closeChatModal();
-    this._updateChatBubbles();
-  }
-
-  _closeChatModal() {
-    this.inputChatText.blur();
-    this.chatModal.classList.add('hidden');
-    this.isPaused = false;
-  }
-
-  _setTitleStatus(msg) {
-    if (!msg) {
-      this.titleStatusMsg.classList.add('hidden');
-      this.titleStatusMsg.textContent = '';
-    } else {
-      this.titleStatusMsg.textContent = msg;
-      this.titleStatusMsg.classList.remove('hidden');
-    }
-  }
-
-  _showToast(msg, duration = 2.6) {
-    this.toastBanner.textContent = msg;
-    this.toastBanner.classList.remove('hidden');
-    this.toastTimer = duration;
   }
 
   _enterCastleInterior() {
@@ -657,14 +328,14 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
-    this.respawnFlash.classList.add('active');
+    this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
-    this._sendSe('respawn');
+    this.sendSe('respawn');
 
     setTimeout(() => {
       this.currentArea = 'castle';
       this.sound.setBgmMode('default');
-      this.sliderTimerEl.classList.add('hidden');
+      this.ui.hideSliderTimer();
       this.player.setScene(this.castleInterior.scene);
       if (this.remotePlayer) {
         this.remotePlayer.setScene(this.castleInterior.scene);
@@ -672,16 +343,16 @@ class MaimaiGame {
 
       this.castleInterior.resetDoor();
       const spawnPos = new THREE.Vector3(0, this.player.radius, 11.4);
-      this.player.facingYaw = Math.PI; // -Z方向（丸い床の中心方向）を向く
+      this.player.facingYaw = Math.PI;
       this.player.resetTo(spawnPos);
-      this.camYaw = Math.PI; // 扉とは反対（床中心側）からまいまいの正面を見る
+      this.camYaw = Math.PI;
       this.camPitch = 0.24;
       this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
       this._updateCamera(1.0);
       this.castleInterior.updateFloorVisibility(this.camera.position, this.camLookTarget);
-      this._sendStatePacket();
+      this.sendStatePacket();
 
-      this.respawnFlash.classList.remove('active');
+      this.ui.setRespawnFlash(false);
       this.isAreaTransitioning = false;
     }, 220);
   }
@@ -691,13 +362,13 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
-    this.respawnFlash.classList.add('active');
+    this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
-    this._sendSe('respawn');
+    this.sendSe('respawn');
 
     setTimeout(() => {
       this.currentArea = 'sky';
-      this.sliderTimerEl.classList.add('hidden');
+      this.ui.hideSliderTimer();
       this.player.setScene(this.scene);
       if (this.remotePlayer) {
         this.remotePlayer.setScene(this.scene);
@@ -725,17 +396,17 @@ class MaimaiGame {
         this.remotePlayer && this.remoteArea === 'sky' ? this.remotePlayer.position : null
       );
 
-      this.player.facingYaw = 0; // +Z方向（外の前庭方向）を向く
+      this.player.facingYaw = 0;
       this.player.resetTo(exitPos);
       this.player.safeCloud = null;
       this.player.safeFallbackPos.copy(exitPos);
-      this.camYaw = 0; // お城と逆の前庭側からまいまいの正面を見る
+      this.camYaw = 0;
       this.camPitch = THREE.MathUtils.clamp(this.camPitch, 0.08, 1.15);
       this.camLookTarget.set(exitPos.x, exitPos.y + 0.9, exitPos.z);
       this._updateCamera(1.0);
-      this._sendStatePacket();
+      this.sendStatePacket();
 
-      this.respawnFlash.classList.remove('active');
+      this.ui.setRespawnFlash(false);
       this.isAreaTransitioning = false;
     }, 220);
   }
@@ -745,9 +416,9 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
-    this.respawnFlash.classList.add('active');
+    this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
-    this._sendSe('respawn');
+    this.sendSe('respawn');
 
     setTimeout(() => {
       this.currentArea = 'mini_skySlider';
@@ -761,9 +432,7 @@ class MaimaiGame {
       this.sliderCamPitchOffset = 0;
       this.miniSkySlider.startNewRun(this.player);
 
-      this.sliderTimerEl.classList.remove('hidden');
-      this.sliderTimerEl.classList.remove('finished');
-      this.sliderTimerValueEl.textContent = '00:00.00';
+      this.ui.showSliderTimer('00:00.00', false);
 
       this.camLookTarget.set(this.player.position.x, this.player.position.y + 0.9, this.player.position.z);
       this.miniSkySlider.updateCamera(
@@ -774,9 +443,9 @@ class MaimaiGame {
         this.sliderCamYawOffset,
         this.sliderCamPitchOffset
       );
-      this._sendStatePacket();
+      this.sendStatePacket();
 
-      this.respawnFlash.classList.remove('active');
+      this.ui.setRespawnFlash(false);
       this.isAreaTransitioning = false;
     }, 220);
   }
@@ -786,44 +455,42 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
-    this.respawnFlash.classList.add('active');
+    this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
-    this._sendSe('respawn');
+    this.sendSe('respawn');
 
     setTimeout(() => {
       this.currentArea = 'castle';
       this.sound.setBgmMode('default');
-      this.sliderTimerEl.classList.add('hidden');
-      this.sliderTimerEl.classList.remove('finished');
+      this.ui.hideSliderTimer();
       this.player.setScene(this.castleInterior.scene);
       if (this.remotePlayer) {
         this.remotePlayer.setScene(this.castleInterior.scene);
       }
 
-      // 城内のワープポータル前（上空から落ちてくる）
       const spawnPos = new THREE.Vector3(0, 4.8, this.castleInterior.portalZ + 3.4);
-      this.player.facingYaw = 0; // +Z（城中心側）を向く
+      this.player.facingYaw = 0;
       this.player.resetTo(spawnPos);
       this.camYaw = 0;
       this.camPitch = 0.24;
       this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
       this._updateCamera(1.0);
       this.castleInterior.updateFloorVisibility(this.camera.position, this.camLookTarget);
-      this._sendStatePacket();
+      this.sendStatePacket();
 
-      this.respawnFlash.classList.remove('active');
+      this.ui.setRespawnFlash(false);
       this.isAreaTransitioning = false;
     }, 240);
   }
 
-  _warpToPartner() {
+  warpToPartner() {
     if (!this.remotePlayer || this.currentArea === 'mini_skySlider' || this.remoteArea === 'mini_skySlider') return;
-    this.respawnFlash.classList.add('active');
+    this.ui.setRespawnFlash(true);
 
     if (this.remoteArea === 'castle') {
       this.currentArea = 'castle';
       this.sound.setBgmMode('default');
-      this.sliderTimerEl.classList.add('hidden');
+      this.ui.hideSliderTimer();
       this.player.setScene(this.castleInterior.scene);
       this.remotePlayer.setScene(this.castleInterior.scene);
       const rp = this.remotePlayer.position;
@@ -844,14 +511,15 @@ class MaimaiGame {
       this.sliderCamYawOffset = 0;
       this.sliderCamPitchOffset = 0;
       this.miniSkySlider.warpToPartnerPosition(this.remotePlayer.position, this.player);
-      this.sliderTimerEl.classList.remove('hidden');
-      this.sliderTimerEl.classList.toggle('finished', this.miniSkySlider.timerFinished);
-      this.sliderTimerValueEl.textContent = this.miniSkySlider.formatTime(this.miniSkySlider.elapsedTime);
+      this.ui.showSliderTimer(
+        this.miniSkySlider.formatTime(this.miniSkySlider.elapsedTime),
+        this.miniSkySlider.timerFinished
+      );
       this.camLookTarget.set(this.player.position.x, this.player.position.y + 0.9, this.player.position.z);
     } else {
       this.currentArea = 'sky';
       this.sound.setBgmMode('default');
-      this.sliderTimerEl.classList.add('hidden');
+      this.ui.hideSliderTimer();
       this.player.setScene(this.scene);
       this.remotePlayer.setScene(this.scene);
       this.camPitch = THREE.MathUtils.clamp(this.camPitch, 0.08, 1.15);
@@ -872,63 +540,10 @@ class MaimaiGame {
       this.player.airJumpsLeft = 1;
     }
 
-    this._sendStatePacket();
+    this.sendStatePacket();
     setTimeout(() => {
-      this.respawnFlash.classList.remove('active');
+      this.ui.setRespawnFlash(false);
     }, 220);
-  }
-
-  _toggleFullscreen() {
-    const docEl = document.documentElement;
-    const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
-
-    if (!isFull && !document.body.classList.contains('pseudo-fullscreen')) {
-      const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
-      if (req) {
-        req.call(docEl).catch(() => {
-          document.body.classList.add('pseudo-fullscreen');
-          this._syncFullscreenUI();
-        });
-      } else {
-        document.body.classList.add('pseudo-fullscreen');
-      }
-    } else {
-      if (isFull) {
-        const exit = document.exitFullscreen || document.webkitExitFullscreen;
-        if (exit) exit.call(document);
-      }
-      document.body.classList.remove('pseudo-fullscreen');
-    }
-    this._syncFullscreenUI();
-  }
-
-  _syncFullscreenUI() {
-    const isFull = !!(
-      document.fullscreenElement ||
-      document.webkitFullscreenElement ||
-      document.body.classList.contains('pseudo-fullscreen')
-    );
-    this.fullscreenStatusEl.textContent = isFull ? 'ON' : 'OFF';
-    this.fullscreenStatusEl.classList.toggle('on', isFull);
-    this._onResize();
-  }
-
-  _showDialogue(message, duration = 4.5, speaker = 'heart', showChoices = false) {
-    const isStar = speaker === 'star';
-    this.dialogueBox.classList.toggle('star', isStar);
-    this.dialogueSpeaker.textContent = isStar ? 'スターくん' : 'ハートちゃん';
-    this.dialogueAvatarHeart.classList.toggle('hidden', isStar);
-    this.dialogueAvatarStar.classList.toggle('hidden', !isStar);
-    this.dialogueText.textContent = message;
-    this.dialogueChoices.classList.toggle('hidden', !showChoices);
-    this.dialogueBox.classList.remove('hidden');
-    this.dialogueTimer = duration;
-  }
-
-  _hideDialogue() {
-    this.dialogueChoices.classList.add('hidden');
-    this.dialogueBox.classList.add('hidden');
-    this.dialogueTimer = 0;
   }
 
   startGame(mode = 'solo', roomId = '') {
@@ -939,45 +554,20 @@ class MaimaiGame {
     this.isAreaTransitioning = false;
     this.areaPortalCooldown = 0;
 
-    this.titleScreen.classList.add('hidden');
-    this.joinModal.classList.add('hidden');
-    this.chatModal.classList.add('hidden');
-    this.settingsModal.classList.add('hidden');
-    this.sliderTimerEl.classList.add('hidden');
-    this.hud.classList.remove('hidden');
     this.controls.reset();
-    this._hideDialogue();
+    this.physics.resetCooldowns();
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
     this.isStarAsking = false;
-    this.rideCooldown = 0;
 
     const isYellow = mode === 'guest';
     this.player.setScene(this.scene);
     this.player.setColorTheme(isYellow ? 'yellow' : 'red');
     this.player.setChatText('');
-    this.btnChatClear.classList.add('hidden');
-    this.localBubble.classList.add('hidden');
-    this.remoteBubble.classList.add('hidden');
-    this.portalInfoBubble.classList.add('hidden');
-    this.joystickKnob.classList.toggle('yellow', isYellow);
+    this.ui.applyStartGameUI(mode, roomId, isYellow);
 
     if (mode === 'solo') {
-      this.roomBadge.classList.add('hidden');
-      this.btnWarpPartner.classList.add('hidden');
       this._removeRemotePlayer();
-    } else {
-      this.roomBadge.classList.remove('hidden');
-      this.roomIdValue.textContent = roomId;
-      if (mode === 'host') {
-        this.roomPartnerStatus.textContent = 'あいてをまっています…';
-        this.roomPartnerStatus.classList.remove('online');
-        this.btnWarpPartner.classList.add('hidden');
-      } else {
-        this.roomPartnerStatus.textContent = '2人プレイ中';
-        this.roomPartnerStatus.classList.add('online');
-        this.btnWarpPartner.classList.remove('hidden');
-      }
     }
 
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
@@ -1005,35 +595,22 @@ class MaimaiGame {
 
     this.isPlaying = false;
     this.isPaused = false;
-    this.chatModal.classList.add('hidden');
-    this.settingsModal.classList.add('hidden');
-    this.sliderTimerEl.classList.add('hidden');
-    this.hud.classList.add('hidden');
-    this.roomBadge.classList.add('hidden');
-    this.btnWarpPartner.classList.add('hidden');
-    this.btnChatClear.classList.add('hidden');
-    this.toastBanner.classList.add('hidden');
-    this.localBubble.classList.add('hidden');
-    this.remoteBubble.classList.add('hidden');
-    this.portalInfoBubble.classList.add('hidden');
-    this.titleScreen.classList.remove('hidden');
+    this.ui.applyBackToTitleUI();
     this.controls.reset();
-    this._hideDialogue();
+    this.physics.resetCooldowns();
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
     this.isStarAsking = false;
-    this.rideCooldown = 0;
 
     this.player.setScene(this.scene);
     this.player.setColorTheme('red');
     this.player.setChatText('');
-    this.joystickKnob.classList.remove('yellow');
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
   }
 
-  _onResize() {
+  onResize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.camera.aspect = w / h;
@@ -1062,7 +639,7 @@ class MaimaiGame {
     } else if (this.isPlaying && this.isPaused) {
       this._syncNetwork(dt);
       const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
-    this._updateWarpPartnerVisibility();
+      this._updateWarpPartnerVisibility();
       if (this.remotePlayer) {
         this.remotePlayer.group.visible = partnerHere;
         if (!partnerHere) this.remotePlayer.dropShadow.visible = false;
@@ -1096,7 +673,7 @@ class MaimaiGame {
           if (this.remotePlayer) this.remotePlayer.dropShadow.visible = false;
         }
       }
-      this._updateChatBubbles();
+      this.ui.updateChatBubbles();
     } else if (!this.isPlaying) {
       this.camYaw += dt * 0.18;
       this.world.updateChunks(this.player.position, dt);
@@ -1118,27 +695,13 @@ class MaimaiGame {
     this.netSendTimer += dt;
     if (this.netSendTimer >= 0.033) {
       this.netSendTimer = 0;
-      this._sendStatePacket();
+      this.sendStatePacket();
     }
   }
 
   _updateGame(dt) {
-    if (this.dialogueTimer > 0 && !this.isStarAsking) {
-      this.dialogueTimer -= dt;
-      if (this.dialogueTimer <= 0) {
-        this._hideDialogue();
-      }
-    }
-
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) {
-        this.toastBanner.classList.add('hidden');
-      }
-    }
-
-    if (this.bumpCooldown > 0) this.bumpCooldown -= dt;
-    if (this.rideCooldown > 0) this.rideCooldown -= dt;
+    this.ui.updateTimers(dt, this.isStarAsking);
+    this.physics.updateCooldowns(dt);
     if (this.areaPortalCooldown > 0) this.areaPortalCooldown -= dt;
 
     const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
@@ -1189,13 +752,15 @@ class MaimaiGame {
         this.player,
         this.controls,
         this.sound,
-        (name) => this._sendSe(name)
+        (name) => this.sendSe(name)
       );
 
-      this.sliderTimerValueEl.textContent = this.miniSkySlider.formatTime(res.elapsedTime);
+      this.ui.updateSliderTimerValue(
+        this.miniSkySlider.formatTime(res.elapsedTime),
+        res.justFinished ? true : null
+      );
       if (res.justFinished) {
-        this.sliderTimerEl.classList.add('finished');
-        this._showToast(`ゴール！ タイム ${this.miniSkySlider.formatTime(res.elapsedTime)}`, 3.5);
+        this.ui.showToast(`ゴール！ タイム ${this.miniSkySlider.formatTime(res.elapsedTime)}`, 3.5);
       }
 
       this.miniSkySlider.updateCamera(
@@ -1212,7 +777,7 @@ class MaimaiGame {
       }
 
       this._syncNetwork(dt);
-      this._updateChatBubbles();
+      this.ui.updateChatBubbles();
       return;
     }
 
@@ -1269,7 +834,7 @@ class MaimaiGame {
     if (this.player.isRidingPartner && partnerHere) {
       if (this.player.jumpBufferTimer > 0) {
         this.player.isRidingPartner = false;
-        this.rideCooldown = 0.28;
+        this.physics.setRideCooldown(0.28);
         this.player.velocity.y = 14.5;
         this.player.isGrounded = false;
         this.player.groundCloud = null;
@@ -1279,10 +844,10 @@ class MaimaiGame {
         this.player.triggerSquash(1.38);
         this.player.setExpression('jump', 0.4);
         this.sound.playJump();
-        this._sendSe('jump');
+        this.sendSe('jump');
       } else if (inputMag > 0.06) {
         this.player.isRidingPartner = false;
-        this.rideCooldown = 0.28;
+        this.physics.setRideCooldown(0.28);
       } else {
         const rp = this.remotePlayer.position;
         this.player.position.set(rp.x, rp.y + this.player.radius + this.remotePlayer.radius - 0.04, rp.z);
@@ -1295,75 +860,19 @@ class MaimaiGame {
 
     // 通常移動・物理処理
     if (!this.player.isRidingPartner) {
-      if (this.currentArea === 'sky' && this.player.isGrounded && this.player.groundCloud) {
-        this.player.position.add(this.player.groundCloud.deltaPos);
+      const didDoubleJump = this.physics.stepMovement(
+        this.player,
+        move,
+        inputMag,
+        this.camYaw,
+        dt,
+        this.sound,
+        (name) => this.sendSe(name),
+        this.currentArea === 'sky'
+      );
+      if (didDoubleJump && this.network.isConnected) {
+        this.network.send({ type: 'dj' });
       }
-
-      const forward = this._tmpForward.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
-      const right = this._tmpRight.set(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
-
-      const wishDir = this._tmpWishDir
-        .set(0, 0, 0)
-        .addScaledVector(right, move.x)
-        .addScaledVector(forward, -move.y);
-
-      const maxSpeed = 10.5;
-
-      if (inputMag > 0.05 && wishDir.lengthSq() > 0.0001) {
-        wishDir.normalize();
-        const targetVx = wishDir.x * maxSpeed * inputMag;
-        const targetVz = wishDir.z * maxSpeed * inputMag;
-        const grip = this.player.isGrounded ? 15.0 : 5.5;
-        const alpha = 1 - Math.exp(-grip * dt);
-        this.player.velocity.x = THREE.MathUtils.lerp(this.player.velocity.x, targetVx, alpha);
-        this.player.velocity.z = THREE.MathUtils.lerp(this.player.velocity.z, targetVz, alpha);
-      } else {
-        const stopRate = this.player.isGrounded ? 22.0 : 4.0;
-        const decay = Math.exp(-stopRate * dt);
-        this.player.velocity.x *= decay;
-        this.player.velocity.z *= decay;
-        if (this.player.isGrounded && Math.hypot(this.player.velocity.x, this.player.velocity.z) < 0.08) {
-          this.player.velocity.x = 0;
-          this.player.velocity.z = 0;
-        }
-      }
-
-      if (this.player.isGrounded) {
-        this.player.coyoteTimer = 0.12;
-      } else if (this.player.coyoteTimer > 0) {
-        this.player.coyoteTimer -= dt;
-      }
-
-      if (this.player.jumpBufferTimer > 0) {
-        if (this.player.coyoteTimer > 0) {
-          this.player.velocity.y = 14.5;
-          this.player.isGrounded = false;
-          this.player.groundCloud = null;
-          this.player.airJumpsLeft = 1;
-          this.player.jumpBufferTimer = 0;
-          this.player.coyoteTimer = 0;
-          this.player.triggerSquash(1.38);
-          this.player.setExpression('jump', 0.4);
-          this.sound.playJump();
-          this._sendSe('jump');
-        } else if (this.player.airJumpsLeft > 0) {
-          this.player.velocity.y = 13.6;
-          this.player.airJumpsLeft--;
-          this.player.jumpBufferTimer = 0;
-          this.player.triggerSquash(1.42);
-          this.player.setExpression('happy', 0.45);
-          this.player.spawnDoubleJumpRing();
-          this.sound.playDoubleJump();
-          if (this.network.isConnected) {
-            this.network.send({ type: 'dj' });
-          }
-        }
-      }
-
-      this.player.velocity.y -= 32.0 * dt;
-      this.player.velocity.y = Math.max(this.player.velocity.y, -28);
-
-      this.player.position.addScaledVector(this.player.velocity, dt);
 
       const wasGrounded = this.player.isGrounded;
       this.player.isGrounded = false;
@@ -1382,15 +891,27 @@ class MaimaiGame {
             this.player.triggerSquash(0.66);
             this.player.setExpression('land', 0.25);
             this.sound.playLand();
-            this._sendSe('land');
+            this.sendSe('land');
           }
         }
       } else {
-        this._resolveCollisions(wasGrounded);
+        this.physics.resolveWorldCollisions(
+          this.player,
+          this.world,
+          this.sound,
+          (name) => this.sendSe(name),
+          wasGrounded
+        );
       }
 
       if (partnerHere) {
-        this._resolvePlayerInteraction(wasGrounded);
+        this.physics.resolvePlayerInteraction(
+          this.player,
+          this.remotePlayer,
+          this.sound,
+          (name) => this.sendSe(name),
+          wasGrounded
+        );
       }
     }
 
@@ -1413,8 +934,8 @@ class MaimaiGame {
           this.world.heartBuddy.setExpression('happy', 3.5);
           this.player.setExpression('happy', 1.2);
           this.sound.playHeartGreet();
-          this._sendSe('heart');
-          this._showDialogue('あ、まいまい！遊びに来てくれたの？', 4.5, 'heart', false);
+          this.sendSe('heart');
+          this.ui.showDialogue('あ、まいまい！遊びに来てくれたの？', 4.5, 'heart', false);
         }
       } else if (heartDist > 4.2) {
         this.isTouchingHeart = false;
@@ -1429,7 +950,7 @@ class MaimaiGame {
             this.isTouchingStar = true;
             this.player.setExpression('happy', 1.5);
             this.sound.playStarWin();
-            this._showDialogue('すごいね！まいまいのかち！', 4.5, 'star', false);
+            this.ui.showDialogue('すごいね！まいまいのかち！', 4.5, 'star', false);
             this.network.send({ type: 'star_tag', action: 'catch' });
           } else {
             this._finishStarTag(true);
@@ -1443,15 +964,15 @@ class MaimaiGame {
             this.world.starBuddy.startAsking();
             this.player.setExpression('happy', 1.2);
             this.sound.playStarGreet();
-            this._sendSe('star');
-            this._showDialogue('やあ、まいまい！ボクと遊ぶ？', 0, 'star', true);
+            this.sendSe('star');
+            this.ui.showDialogue('やあ、まいまい！ボクと遊ぶ？', 0, 'star', true);
           }
         } else if (starDist > 4.2) {
           this.isTouchingStar = false;
           if (this.isStarAsking) {
             this.isStarAsking = false;
             this.world.starBuddy.cancelAsking();
-            this._hideDialogue();
+            this.ui.hideDialogue();
           }
         }
       }
@@ -1508,304 +1029,27 @@ class MaimaiGame {
       ) {
         this._enterMiniSkySlider();
       }
-    } else if (this.world.castleIsland && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
-      const ci = this.world.castleIsland;
-      const dx = this.player.position.x - ci.position.x;
-      const dz = this.player.position.z - ci.position.z;
-      const dy = this.player.position.y - ci.groundWorldY;
-      // お城の正面の扉（z = 0.62）をくぐった直後に異空間へ切り替え
-      if (ci.openAmount >= 0.55 && Math.abs(dx) < 1.45 && dz <= 0.1 && dz >= -1.8 && dy >= 0 && dy < 3.8) {
+    } else if (!this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
+      const entranceArea = this.world.checkStructureEntrances(this.player.position);
+      if (entranceArea === 'castle') {
         this._enterCastleInterior();
       }
     }
 
     if (prevRiding !== this.player.isRidingPartner) {
-      this._sendStatePacket();
+      this.sendStatePacket();
     } else {
       this._syncNetwork(dt);
     }
 
-    this._updateChatBubbles();
-  }
-
-  _updateChatBubbles() {
-    this.camera.updateMatrixWorld();
-    this._updateSingleBubble(this.player, this.localBubble, this.localBubbleText);
-    if (this.remotePlayer && this.remoteArea === this.currentArea) {
-      this._updateSingleBubble(this.remotePlayer, this.remoteBubble, this.remoteBubbleText);
-    } else {
-      this.remoteBubble.classList.add('hidden');
-    }
-    this._updatePortalInfoBubble();
-  }
-
-  _updatePortalInfoBubble() {
-    if (!this.portalInfoBubble) return;
-    if (!this.isPlaying || this.currentArea !== 'castle' || this.isAreaTransitioning) {
-      this.portalInfoBubble.classList.add('hidden');
-      return;
-    }
-
-    const pz = this.castleInterior.portalZ;
-    const distToPlayer = Math.hypot(this.player.position.x, this.player.position.z - pz);
-    if (distToPlayer > 6.8) {
-      this.portalInfoBubble.classList.add('hidden');
-      return;
-    }
-
-    this._tmpBubblePos.set(0, 3.85, pz);
-    const camDist = this.camera.position.distanceTo(this._tmpBubblePos);
-    this._tmpBubblePos.applyMatrix4(this.camera.matrixWorldInverse);
-    if (this._tmpBubblePos.z >= -0.2) {
-      this.portalInfoBubble.classList.add('hidden');
-      return;
-    }
-
-    this._tmpBubblePos.applyMatrix4(this.camera.projectionMatrix);
-    const sx = (this._tmpBubblePos.x * 0.5 + 0.5) * window.innerWidth;
-    const sy = (-this._tmpBubblePos.y * 0.5 + 0.5) * window.innerHeight;
-    const scale = THREE.MathUtils.clamp(11.5 / Math.max(4.5, camDist), 0.72, 1.05);
-
-    this.portalInfoBubble.classList.remove('hidden');
-    this.portalInfoBubble.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -100%) scale(${scale})`;
-  }
-
-  _updateSingleBubble(playerObj, bubbleEl, textEl) {
-    if (!playerObj || !playerObj.chatText) {
-      bubbleEl.classList.add('hidden');
-      return;
-    }
-
-    this._tmpBubblePos.set(
-      playerObj.position.x,
-      playerObj.position.y + playerObj.radius + 0.3,
-      playerObj.position.z
-    );
-
-    const dist = this.camera.position.distanceTo(this._tmpBubblePos);
-    if (dist > 110) {
-      bubbleEl.classList.add('hidden');
-      return;
-    }
-
-    this._tmpBubblePos.applyMatrix4(this.camera.matrixWorldInverse);
-    if (this._tmpBubblePos.z >= -0.2) {
-      bubbleEl.classList.add('hidden');
-      return;
-    }
-
-    this._tmpBubblePos.applyMatrix4(this.camera.projectionMatrix);
-
-    const sx = (this._tmpBubblePos.x * 0.5 + 0.5) * window.innerWidth;
-    const sy = (-this._tmpBubblePos.y * 0.5 + 0.5) * window.innerHeight;
-    const scale = THREE.MathUtils.clamp(10.5 / Math.max(4, dist), 0.65, 1.05);
-
-    if (textEl.textContent !== playerObj.chatText) {
-      textEl.textContent = playerObj.chatText;
-    }
-    bubbleEl.classList.toggle('yellow', playerObj.colorTheme === 'yellow');
-    bubbleEl.classList.remove('hidden');
-    bubbleEl.style.transform = `translate3d(${sx + 16 * scale}px, ${sy - 10 * scale}px, 0) translate(0, -100%) scale(${scale})`;
-  }
-
-  _resolvePlayerInteraction(wasGrounded) {
-    if (this.remotePlayer.isRidingPartner) return;
-
-    const p = this.player.position;
-    const rp = this.remotePlayer.position;
-
-    const dx = p.x - rp.x;
-    const dy = p.y - rp.y;
-    const dz = p.z - rp.z;
-    const dist = Math.hypot(dx, dy, dz);
-    const minDist = this.player.radius + this.remotePlayer.radius;
-
-    if (dist < minDist && dist > 0.0001) {
-      const nx = dx / dist;
-      const ny = dy / dist;
-      const nz = dz / dist;
-      const penetration = minDist - dist;
-
-      if (this.rideCooldown <= 0 && ny > 0.45 && this.player.velocity.y <= 2.0 && p.y > rp.y + 0.25) {
-        this.player.isRidingPartner = true;
-        p.set(rp.x, rp.y + minDist - 0.04, rp.z);
-        this.player.velocity.set(0, 0, 0);
-        this.player.isGrounded = true;
-        this.player.airJumpsLeft = 1;
-
-        if (!wasGrounded) {
-          this.player.triggerSquash(0.76);
-          this.sound.playLand();
-          this._sendSe('land');
-        }
-      } else {
-        p.x += nx * penetration * 0.65;
-        p.y += ny * penetration * 0.35;
-        p.z += nz * penetration * 0.65;
-
-        const vn =
-          this.player.velocity.x * nx +
-          this.player.velocity.y * ny +
-          this.player.velocity.z * nz;
-
-        if (vn < 0) {
-          this.player.velocity.x -= nx * vn;
-          this.player.velocity.y -= ny * vn;
-          this.player.velocity.z -= nz * vn;
-        }
-
-        const hLen = Math.hypot(nx, nz) || 1;
-        this.player.velocity.x += (nx / hLen) * 3.4;
-        this.player.velocity.z += (nz / hLen) * 3.4;
-
-        if (ny < -0.5 && this.player.velocity.y > 0) {
-          this.player.velocity.y = -1.2;
-        }
-
-        if (this.bumpCooldown <= 0) {
-          this.bumpCooldown = 0.28;
-          this.player.triggerSquash(0.82);
-          this.sound.playLand();
-          this._sendSe('land');
-        }
-      }
-    }
-  }
-
-  _resolveCollisions(wasGrounded) {
-    const p = this.player.position;
-    const r = this.player.radius;
-
-    const structHit = this.world.resolveStructureCollisions(p, this.player.velocity, r);
-    if (structHit.hitGround) {
-      this.player.isGrounded = true;
-      this.player.groundCloud = null;
-      this.player.airJumpsLeft = 1;
-
-      if (!wasGrounded && structHit.hardLandingVn < -4.5) {
-        this.player.triggerSquash(0.66);
-        this.player.setExpression('land', 0.25);
-        this.sound.playLand();
-        this._sendSe('land');
-      }
-
-      if (this.world.castleIsland) {
-        this.player.safeCloud = null;
-        this.player.safeFallbackPos.set(
-          this.world.castleIsland.position.x,
-          this.world.castleIsland.groundWorldY + r + 0.6,
-          this.world.castleIsland.position.z + 6.5
-        );
-      }
-    }
-
-    for (const cloud of this.world.clouds) {
-      if (Math.abs(cloud.position.x - p.x) > 28 || Math.abs(cloud.position.z - p.z) > 28) {
-        continue;
-      }
-
-      for (const col of cloud.colliders) {
-        const cx = cloud.position.x + col.offset.x;
-        const cy = cloud.position.y + col.offset.y;
-        const cz = cloud.position.z + col.offset.z;
-
-        const dx = p.x - cx;
-        const dy = p.y - cy;
-        const dz = p.z - cz;
-
-        const maxR = Math.max(col.rx, col.ry, col.rz) + r;
-        if (dx * dx + dy * dy + dz * dz > maxR * maxR) continue;
-
-        const k0 = Math.sqrt(
-          (dx / col.rx) * (dx / col.rx) +
-          (dy / col.ry) * (dy / col.ry) +
-          (dz / col.rz) * (dz / col.rz)
-        );
-
-        if (k0 < 0.0001) continue;
-
-        const sx = dx / k0;
-        const sy = dy / k0;
-        const sz = dz / k0;
-
-        const nxRaw = dx / (col.rx * col.rx);
-        const nyRaw = dy / (col.ry * col.ry);
-        const nzRaw = dz / (col.rz * col.rz);
-        const nLen = Math.hypot(nxRaw, nyRaw, nzRaw) || 1;
-        const nx = nxRaw / nLen;
-        const ny = nyRaw / nLen;
-        const nz = nzRaw / nLen;
-
-        const distSurf = Math.hypot(dx - sx, dy - sy, dz - sz);
-        let penetration = 0;
-
-        if (k0 >= 1.0) {
-          if (distSurf < r) {
-            penetration = r - distSurf;
-          }
-        } else {
-          penetration = r + distSurf;
-        }
-
-        if (penetration > 0) {
-          p.x += nx * penetration;
-          p.y += ny * penetration;
-          p.z += nz * penetration;
-
-          const vn =
-            this.player.velocity.x * nx +
-            this.player.velocity.y * ny +
-            this.player.velocity.z * nz;
-
-          if (vn < 0) {
-            this.player.velocity.x -= nx * vn;
-            this.player.velocity.y -= ny * vn;
-            this.player.velocity.z -= nz * vn;
-          }
-
-          if (ny > 0.45) {
-            if (cloud.type === 'bouncy') {
-              this.player.velocity.y = 22.0;
-              this.player.isGrounded = false;
-              this.player.airJumpsLeft = 1;
-              this.player.triggerSquash(1.48);
-              this.player.setExpression('happy', 0.55);
-              this.sound.playBounce();
-              this._sendSe('bounce');
-            } else {
-              this.player.isGrounded = true;
-              this.player.groundCloud = cloud;
-              this.player.airJumpsLeft = 1;
-
-              if (!wasGrounded && vn < -4.5) {
-                this.player.triggerSquash(0.66);
-                this.player.setExpression('land', 0.25);
-                this.sound.playLand();
-                this._sendSe('land');
-              }
-
-              if (ny > 0.65) {
-                const mainCol = cloud.colliders[0];
-                this.player.safeCloud = cloud;
-                this.player.safeLocalOffset.set(
-                  mainCol.offset.x,
-                  mainCol.offset.y + mainCol.ry + r + 0.6,
-                  mainCol.offset.z
-                );
-                this.player.safeFallbackPos.copy(cloud.position).add(this.player.safeLocalOffset);
-              }
-            }
-          }
-        }
-      }
-    }
+    this.ui.updateChatBubbles();
   }
 
   _respawn() {
     this.isRespawning = true;
-    this.respawnFlash.classList.add('active');
+    this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
-    this._sendSe('respawn');
+    this.sendSe('respawn');
 
     setTimeout(() => {
       let targetPos;
@@ -1816,7 +1060,7 @@ class MaimaiGame {
       }
 
       this.player.resetTo(targetPos);
-      this.respawnFlash.classList.remove('active');
+      this.ui.setRespawnFlash(false);
       this.isRespawning = false;
     }, 240);
   }

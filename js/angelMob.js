@@ -112,21 +112,23 @@ class AngelMob {
 
   constructor(scene, options = {}) {
     this.scene = scene;
-    this.homeType = options.homeType || 'cloud'; // 'cloud' | 'castle'
+    this.homeType = options.homeType || 'cloud'; // 'cloud' | 'castle' | 'shop'
     this.castleIsland = options.castleIsland || null;
+    this.shopAnchor = options.shopAnchor ? options.shopAnchor.clone() : null;
+    this.shopYaw = typeof options.shopYaw === 'number' ? options.shopYaw : 0;
     this.homeCloud = null;
 
-    this.baseScale = 1.32;
+    this.baseScale = this.homeType === 'shop' ? 1.45 : 1.32;
     this.localX = options.localX || 0;
     this.localZ = options.localZ || 0;
     this.position = new THREE.Vector3(0, 0, 0);
-    this.facingYaw = Math.random() * Math.PI * 2;
+    this.facingYaw = this.homeType === 'shop' ? this.shopYaw : Math.random() * Math.PI * 2;
     this.walkYaw = this.facingYaw;
     this.walkSpeed = 1.45 + Math.random() * 0.45;
     this.stateTimer = 1.5 + Math.random() * 2.5;
     this.isPaused = false;
     this.phase = Math.random() * Math.PI * 2;
-    this.appearScale = this.homeType === 'castle' ? 1.0 : 0.05;
+    this.appearScale = (this.homeType === 'castle' || this.homeType === 'shop') ? 1.0 : 0.05;
 
     // 挨拶アニメーション管理
     this.isPlayerNear = false;
@@ -316,8 +318,8 @@ class AngelMob {
       this.isPlayerNear = false;
     }
 
-    // 浮遊散歩の移動更新（近くにいる間は立ち止まって挨拶＆見守り）
-    if (!this.isPlayerNear) {
+    // 浮遊散歩の移動更新（近くにいる間は立ち止まって挨拶＆見守り、店主はその場に待機）
+    if (!this.isPlayerNear && this.homeType !== 'shop') {
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) {
         this.isPaused = !this.isPaused;
@@ -369,6 +371,10 @@ class AngelMob {
       this.position.x = this.castleIsland.position.x + this.localX;
       this.position.z = this.castleIsland.position.z + this.localZ;
       groundWorldY = this.castleIsland.groundWorldY;
+    } else if (this.homeType === 'shop' && this.shopAnchor) {
+      this.position.x = this.shopAnchor.x;
+      this.position.z = this.shopAnchor.z;
+      groundWorldY = this.shopAnchor.y;
     } else if (this.homeCloud) {
       const localSurfY = this._getCloudSurfaceLocalY(this.homeCloud, this.localX, this.localZ);
       this.position.x = this.homeCloud.position.x + this.localX;
@@ -396,7 +402,7 @@ class AngelMob {
     this.bodyPivot.scale.set(xzScale, this.squashY * sFactor, xzScale);
 
     // 向き（プレイヤーが近ければプレイヤー方向、そうでなければ進行方向）
-    let targetYaw = this.walkYaw;
+    let targetYaw = this.homeType === 'shop' ? this.shopYaw : this.walkYaw;
     if (this.isPlayerNear) {
       targetYaw = Math.atan2(playerPos.x - this.position.x, playerPos.z - this.position.z);
     }

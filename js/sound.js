@@ -147,6 +147,19 @@ class SoundManager {
     this.playTone(1318.51, 1318.51, 0.22, 'sine', 0.15 * volScale, 0.065);
   }
 
+  playBuy(volScale = 1.0) {
+    this.init();
+    this.playTone(587.33, 587.33, 0.09, 'triangle', 0.13 * volScale, 0);
+    this.playTone(783.99, 783.99, 0.1, 'triangle', 0.13 * volScale, 0.07);
+    this.playTone(1174.66, 1174.66, 0.25, 'sine', 0.15 * volScale, 0.14);
+  }
+
+  playWingFlap(volScale = 1.0) {
+    this.init();
+    this.playTone(380, 740, 0.16, 'sine', 0.12 * volScale, 0);
+    this.playTone(540, 960, 0.14, 'triangle', 0.07 * volScale, 0.03);
+  }
+
   playClick() {
     this.init();
     this.playTone(620, 740, 0.07, 'triangle', 0.1);

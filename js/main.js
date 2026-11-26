@@ -6,8 +6,12 @@ class MaimaiGame {
     this.isPaused = false;
     this.isRespawning = false;
 
-    // 通貨（スカイ）管理
+    // 通貨（スカイ）と所持アイテム管理
     this.skyCount = this._loadSkyCount();
+    this.ownedItems = this._loadOwnedItems();
+    this.wingsDesired = false;
+    this.isAtShopCounter = false;
+    this.isShopAsking = false;
 
     // エリア管理（'sky' | 'castle' | 'mini_skySlider'）
     this.currentArea = 'sky';
@@ -71,6 +75,7 @@ class MaimaiGame {
     this.physics = new PhysicsSystem();
     this.ui = new UIManager(this);
     this.ui.updateSkyCount(this.skyCount, false);
+    this._syncWingsButtonAndEquip();
 
     this.world.starBuddy.onTagStarted = () => {
       if (!this.isPlaying) return;
@@ -111,6 +116,25 @@ class MaimaiGame {
     } catch (e) {}
   }
 
+  _loadOwnedItems() {
+    try {
+      const raw = window.localStorage ? window.localStorage.getItem('maimai_owned_items') : null;
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') return obj;
+      }
+    } catch (e) {}
+    return {};
+  }
+
+  _saveOwnedItems() {
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem('maimai_owned_items', JSON.stringify(this.ownedItems));
+      }
+    } catch (e) {}
+  }
+
   addSky(amount) {
     if (!amount || amount <= 0) return;
     this.skyCount += amount;
@@ -118,10 +142,67 @@ class MaimaiGame {
     this.ui.updateSkyCount(this.skyCount, true);
   }
 
-  resetSkyCount() {
+  resetSkyAndItems() {
     this.skyCount = 0;
     this._saveSkyCount();
+    this.ownedItems = {};
+    this._saveOwnedItems();
+    this.wingsDesired = false;
+    this._syncWingsButtonAndEquip();
     this.ui.updateSkyCount(this.skyCount, false);
+    this.ui.refreshShopUI();
+    this.sendStatePacket();
+  }
+
+  _syncWingsButtonAndEquip() {
+    const canUseWings = !!this.ownedItems.angel_wings && this.currentArea !== 'mini_skySlider';
+    const equipped = canUseWings && this.wingsDesired;
+    if (this.player) {
+      this.player.setWingsEquipped(equipped);
+    }
+    if (this.ui) {
+      this.ui.updateWingsButton(canUseWings, equipped);
+    }
+  }
+
+  toggleWingsEquipped() {
+    if (!this.ownedItems.angel_wings || this.currentArea === 'mini_skySlider') return;
+    this.wingsDesired = !this.wingsDesired;
+    this._syncWingsButtonAndEquip();
+    if (this.wingsDesired) {
+      this.sound.playWingFlap();
+      this.sendSe('wing');
+    } else {
+      this.sound.playClick();
+    }
+    this.sendStatePacket();
+  }
+
+  openShopFromDialogue() {
+    this.isShopAsking = false;
+    this.ui.showDialogue('いらっしゃい、買いたいものはある？', 0, 'angel', false);
+    this.ui.openShopModal();
+  }
+
+  buyAngelWings() {
+    if (this.ownedItems.angel_wings) return;
+    const price = 100;
+    if (this.skyCount < price) {
+      this.sound.playClick();
+      this.ui.showToast('スカイがたりないよ！', 2.2);
+      return;
+    }
+
+    this.skyCount -= price;
+    this._saveSkyCount();
+    this.ownedItems.angel_wings = true;
+    this._saveOwnedItems();
+
+    this.ui.updateSkyCount(this.skyCount, true);
+    this.ui.refreshShopUI();
+    this._syncWingsButtonAndEquip();
+    this.sound.playBuy();
+    this.ui.showToast('「天使のはね」をかったよ！', 3.0);
   }
 
   _updateWarpPartnerVisibility() {
@@ -168,6 +249,7 @@ class MaimaiGame {
       ex: this.player.expression,
       g: this.player.isGrounded,
       rd: this.player.isRidingPartner ? 1 : 0,
+      wg: this.player.hasWingsEquipped ? 1 : 0,
       ch: this.player.chatText
     };
     if (this.gameMode === 'host') {
@@ -195,6 +277,7 @@ class MaimaiGame {
           ar: this.currentArea,
           hp: [this.player.position.x, this.player.position.y, this.player.position.z],
           hc: this.player.chatText,
+          wg: this.player.hasWingsEquipped ? 1 : 0,
           heart: this.world.heartBuddy.getSyncState(),
           star: this.world.starBuddy.getSyncState()
         });
@@ -253,9 +336,14 @@ class MaimaiGame {
           this.player.safeFallbackPos.copy(spawnPos);
         }
 
+        this._syncWingsButtonAndEquip();
+
         if (this.remotePlayer && data.hp) {
           this.remotePlayer.position.set(data.hp[0], data.hp[1], data.hp[2]);
           this.remotePlayer.remoteTargetPos.set(data.hp[0], data.hp[1], data.hp[2]);
+          if (typeof data.wg !== 'undefined') {
+            this.remotePlayer.setWingsEquipped(!!data.wg);
+          }
           if (typeof data.hc === 'string') {
             this.remotePlayer.setChatText(data.hc);
           }
@@ -295,13 +383,20 @@ class MaimaiGame {
       } else if (data.type === 'dj') {
         if (this.remotePlayer && this.remoteArea === this.currentArea) {
           this.remotePlayer.spawnDoubleJumpRing();
+          if (this.remotePlayer.hasWingsEquipped) {
+            this.remotePlayer.triggerWingFlap();
+          }
           const scale = this._getRemoteSoundScale();
-          if (scale > 0) this.sound.playDoubleJump(scale);
+          if (scale > 0) {
+            if (this.remotePlayer.hasWingsEquipped) this.sound.playWingFlap(scale);
+            else this.sound.playDoubleJump(scale);
+          }
         }
       } else if (data.type === 'se') {
         const scale = this._getRemoteSoundScale();
         if (scale <= 0) return;
         if (data.name === 'jump') this.sound.playJump(scale);
+        else if (data.name === 'wing') this.sound.playWingFlap(scale);
         else if (data.name === 'bounce') this.sound.playBounce(scale);
         else if (data.name === 'land') this.sound.playLand(scale);
         else if (data.name === 'respawn') this.sound.playRespawn(scale);
@@ -378,6 +473,7 @@ class MaimaiGame {
         this.remotePlayer.setScene(this.castleInterior.scene);
       }
 
+      this._syncWingsButtonAndEquip();
       this.castleInterior.resetDoor();
       const spawnPos = new THREE.Vector3(0, this.player.radius, 11.4);
       this.player.facingYaw = Math.PI;
@@ -433,6 +529,7 @@ class MaimaiGame {
         this.remotePlayer && this.remoteArea === 'sky' ? this.remotePlayer.position : null
       );
 
+      this._syncWingsButtonAndEquip();
       this.player.facingYaw = 0;
       this.player.resetTo(exitPos);
       this.player.safeCloud = null;
@@ -465,6 +562,7 @@ class MaimaiGame {
         this.remotePlayer.setScene(this.miniSkySlider.scene);
       }
 
+      this._syncWingsButtonAndEquip();
       this.sliderCamYawOffset = 0;
       this.sliderCamPitchOffset = 0;
       this.miniSkySlider.startNewRun(this.player);
@@ -505,6 +603,7 @@ class MaimaiGame {
         this.remotePlayer.setScene(this.castleInterior.scene);
       }
 
+      this._syncWingsButtonAndEquip();
       const spawnPos = new THREE.Vector3(0, 4.8, this.castleInterior.portalZ + 3.4);
       this.player.facingYaw = 0;
       this.player.resetTo(spawnPos);
@@ -538,6 +637,7 @@ class MaimaiGame {
         Math.max(this.player.radius, rp.y + 0.8),
         Math.sin(ang) * clampedDist
       );
+      this._syncWingsButtonAndEquip();
       this.player.resetTo(target);
       this.camLookTarget.set(target.x, target.y + 0.9, target.z);
     } else if (this.remoteArea === 'mini_skySlider') {
@@ -545,6 +645,7 @@ class MaimaiGame {
       this.sound.setBgmMode('mini_skySlider');
       this.player.setScene(this.miniSkySlider.scene);
       this.remotePlayer.setScene(this.miniSkySlider.scene);
+      this._syncWingsButtonAndEquip();
       this.sliderCamYawOffset = 0;
       this.sliderCamPitchOffset = 0;
       this.miniSkySlider.warpToPartnerPosition(this.remotePlayer.position, this.player);
@@ -571,10 +672,11 @@ class MaimaiGame {
         this.remotePlayer.position
       );
 
+      this._syncWingsButtonAndEquip();
       this.player.safeCloud = null;
       this.player.safeFallbackPos.copy(target);
       this.player.resetTo(target);
-      this.player.airJumpsLeft = 1;
+      this.player.airJumpsLeft = this.player.getMaxAirJumps();
     }
 
     this.sendStatePacket();
@@ -596,7 +698,30 @@ class MaimaiGame {
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
     this.isTouchingPurple = false;
-    this.isStarAsking = false;
+    // お店のカウンター前判定（セリフ表示後、3秒経ったら購入ウィンドウを開く）
+      const atCounter = this.world.shopIsland && this.world.shopIsland.isPlayerAtCounter(this.player.position);
+      if (atCounter) {
+        if (!this.isAtShopCounter && !this.isRespawning && !this.isAreaTransitioning) {
+          this.isAtShopCounter = true;
+          this.shopOpenTimer = 3.0;
+          this.isStarAsking = false;
+          this.world.starBuddy.cancelAsking();
+          this.sound.playHeartGreet();
+          this.ui.showDialogue('いらっしゃい、買いたいものはある？', 0, 'angel', false);
+        } else if (this.shopOpenTimer > 0) {
+          this.shopOpenTimer -= dt;
+          if (this.shopOpenTimer <= 0) {
+            this.isShopAsking = false;
+            this.ui.openShopModal();
+          }
+        }
+      } else {
+        if (this.shopOpenTimer > 0) {
+          this.isShopAsking = false;
+          this.ui.hideDialogue();
+        }
+        this.isAtShopCounter = false;
+      }
 
     const isYellow = mode === 'guest';
     this.player.setScene(this.scene);
@@ -604,6 +729,7 @@ class MaimaiGame {
     this.player.setChatText('');
     this.ui.applyStartGameUI(mode, roomId, isYellow);
     this.ui.updateSkyCount(this.skyCount, false);
+    this._syncWingsButtonAndEquip();
 
     if (mode === 'solo') {
       this._removeRemotePlayer();
@@ -643,10 +769,13 @@ class MaimaiGame {
     this.isTouchingStar = false;
     this.isTouchingPurple = false;
     this.isStarAsking = false;
+    this.isAtShopCounter = false;
+    this.wingsDesired = false;
 
     this.player.setScene(this.scene);
     this.player.setColorTheme('red');
     this.player.setChatText('');
+    this._syncWingsButtonAndEquip();
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.world.resetSessionCoins();
     this.world.heartBuddy.reset();
@@ -745,7 +874,7 @@ class MaimaiGame {
   }
 
   _updateGame(dt) {
-    this.ui.updateTimers(dt, this.isStarAsking);
+    this.ui.updateTimers(dt, this.isStarAsking || this.isShopAsking);
     this.physics.updateCooldowns(dt);
     if (this.areaPortalCooldown > 0) this.areaPortalCooldown -= dt;
 
@@ -880,16 +1009,22 @@ class MaimaiGame {
       if (this.player.jumpBufferTimer > 0) {
         this.player.isRidingPartner = false;
         this.physics.setRideCooldown(0.28);
-        this.player.velocity.y = 14.5;
+        this.player.velocity.y = this.player.hasWingsEquipped ? 13.8 : 14.5;
         this.player.isGrounded = false;
         this.player.groundCloud = null;
-        this.player.airJumpsLeft = 1;
+        this.player.airJumpsLeft = this.player.getMaxAirJumps();
         this.player.jumpBufferTimer = 0;
         this.player.coyoteTimer = 0;
         this.player.triggerSquash(1.38);
         this.player.setExpression('jump', 0.4);
-        this.sound.playJump();
-        this.sendSe('jump');
+        if (this.player.hasWingsEquipped) {
+          this.player.triggerWingFlap();
+          this.sound.playWingFlap();
+          this.sendSe('wing');
+        } else {
+          this.sound.playJump();
+          this.sendSe('jump');
+        }
       } else if (inputMag > 0.06) {
         this.player.isRidingPartner = false;
         this.physics.setRideCooldown(0.28);
@@ -899,7 +1034,7 @@ class MaimaiGame {
         this.player.velocity.set(0, 0, 0);
         this.player.isGrounded = true;
         this.player.coyoteTimer = 0.12;
-        this.player.airJumpsLeft = 1;
+        this.player.airJumpsLeft = this.player.getMaxAirJumps();
       }
     }
 
@@ -931,7 +1066,7 @@ class MaimaiGame {
         );
         if (hit.hitGround) {
           this.player.isGrounded = true;
-          this.player.airJumpsLeft = 1;
+          this.player.airJumpsLeft = this.player.getMaxAirJumps();
           if (!wasGrounded && hit.hardLandingVn < -4.5) {
             this.player.triggerSquash(0.66);
             this.player.setExpression('land', 0.25);
@@ -981,6 +1116,25 @@ class MaimaiGame {
         this.addSky(gotSky);
         this.sound.playCoin();
         this.player.setExpression('happy', 0.45);
+      }
+
+      // お店のカウンター前判定（「かいものする」「またこんど」の選択肢を表示）
+      const atCounter = this.world.shopIsland && this.world.shopIsland.isPlayerAtCounter(this.player.position);
+      if (atCounter) {
+        if (!this.isAtShopCounter && !this.isRespawning && !this.isAreaTransitioning) {
+          this.isAtShopCounter = true;
+          this.isShopAsking = true;
+          this.isStarAsking = false;
+          this.world.starBuddy.cancelAsking();
+          this.sound.playHeartGreet();
+          this.ui.showDialogue('いらっしゃい、買いたいものはある？', 0, 'angel', true, 'かいものする', 'またこんど');
+        }
+      } else {
+        if (this.isShopAsking) {
+          this.isShopAsking = false;
+          this.ui.hideDialogue();
+        }
+        this.isAtShopCounter = false;
       }
 
       const heartDist = this.player.position.distanceTo(this.world.heartBuddy.group.position);

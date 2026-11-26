@@ -85,6 +85,17 @@
               <ellipse cx="33" cy="25.8" rx="2.4" ry="1.3" fill="#ff82c3" opacity="0.7"/>
               <path d="M18.5 26.5Q24 28 29.5 26.5Q27.8 33 24 33Q20.2 33 18.5 26.5Z" fill="#47126b" stroke="#25073d" stroke-width="1.6" stroke-linejoin="round"/>
             </svg>
+            <svg id="dialogue-avatar-angel" class="hidden" viewBox="0 0 48 48" width="38" height="38">
+              <ellipse cx="24" cy="7" rx="10" ry="3.2" fill="none" stroke="#ffd633" stroke-width="3"/>
+              <circle cx="24" cy="26" r="15" fill="#ffd04d" stroke="#465275" stroke-width="2.5"/>
+              <ellipse cx="24" cy="28" rx="11.5" ry="10.5" fill="#ffe6d2"/>
+              <path d="M10 23Q17 16 24 21Q31 16 38 23Q35 12 24 12Q13 12 10 23Z" fill="#ffd04d"/>
+              <circle cx="19.5" cy="27" r="2.1" fill="#3b2420"/>
+              <circle cx="28.5" cy="27" r="2.1" fill="#3b2420"/>
+              <ellipse cx="16.5" cy="30.5" rx="2.2" ry="1.2" fill="#ff829b" opacity="0.65"/>
+              <ellipse cx="31.5" cy="30.5" rx="2.2" ry="1.2" fill="#ff829b" opacity="0.65"/>
+              <path d="M21 31.5Q24 34.5 27 31.5" fill="none" stroke="#9e504b" stroke-width="2" stroke-linecap="round"/>
+            </svg>
           </div>
           <div class="dialogue-content">
             <div id="dialogue-speaker" class="dialogue-speaker">ハートちゃん</div>
@@ -132,7 +143,7 @@
         </div>
       </div>
 
-      <!-- 右側（ジャンプの上）：仲間の近くへ飛ぶボタン -->
+      <!-- 画面右端中央：仲間の近くへ飛ぶボタン -->
       <button id="btn-warp-partner" class="btn-warp hidden" aria-label="仲間の近くへ飛んでいく">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -140,6 +151,15 @@
           <path d="M23 11l-4-4m0 0l-4 4m4-4v9"/>
         </svg>
         <span class="warp-label">あいに行く</span>
+      </button>
+
+      <!-- 右側（ジャンプの上）：天使のはね「とぶ / はずす」ボタン -->
+      <button id="btn-wings" class="btn-wings hidden" aria-label="天使のはね">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 14C9 10.5 5 8.5 2.5 10.2C1.2 11.1 2 13.5 4.2 14.3C3 15.6 4.2 17.5 6.8 16.5C8.6 15.8 10.3 14.8 12 14Z" fill="currentColor" opacity="0.9"/>
+          <path d="M12 14C15 10.5 19 8.5 21.5 10.2C22.8 11.1 22 13.5 19.8 14.3C21 15.6 19.8 17.5 17.2 16.5C15.4 15.8 13.7 14.8 12 14Z" fill="currentColor" opacity="0.9"/>
+        </svg>
+        <span id="wings-btn-label" class="wings-btn-label">とぶ</span>
       </button>
 
       <!-- 右下（おしゃべりの左）：ふきだしをけすボタン -->
@@ -308,6 +328,46 @@
       </div>
     </div>
 
+    <!-- ショップ購入モーダル -->
+    <div id="shop-modal" class="overlay-screen hidden">
+      <div class="modal-card">
+        <div class="card-inner-frame">
+          <h2 class="modal-title">てんしのおみせ</h2>
+          <div class="shop-balance">
+            <span>いまもってるスカイ：</span>
+            <strong id="shop-sky-balance">0</strong>
+            <span>スカイ</span>
+          </div>
+
+          <div class="shop-item-list">
+            <div id="shop-item-wings" class="shop-item-card">
+              <div class="shop-item-preview" aria-hidden="true">
+                <svg viewBox="0 0 64 48" width="58" height="44">
+                  <circle cx="32" cy="10" r="0" fill="none"/>
+                  <path d="M30 28C22 16 11 10 4 15C0.5 17.5 3.5 25 10 26.5C6.5 30 9.5 36.5 17.5 33.5C22.5 31.6 26.5 29.5 30 28Z" fill="#f4f9ff" stroke="#465275" stroke-width="2.4" stroke-linejoin="round"/>
+                  <path d="M34 28C42 16 53 10 60 15C63.5 17.5 60.5 25 54 26.5C57.5 30 54.5 36.5 46.5 33.5C41.5 31.6 37.5 29.5 34 28Z" fill="#f4f9ff" stroke="#465275" stroke-width="2.4" stroke-linejoin="round"/>
+                  <path d="M15 17C19 20 23 23 27 25" stroke="#cde2ff" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M49 17C45 20 41 23 37 25" stroke="#cde2ff" stroke-width="2" stroke-linecap="round"/>
+                  <polygon points="32,6 33.8,10.5 38.5,11 35,14.2 36,19 32,16.5 28,19 29,14.2 25.5,11 30.2,10.5" fill="#ffe159" stroke="#d99616" stroke-width="1.3" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="shop-item-info">
+                <div class="shop-item-name">天使のはね</div>
+                <div class="shop-item-desc">5回まで空中でふわっととべるよ！</div>
+              </div>
+              <button id="btn-buy-wings" class="btn-buy-item">
+                <span>100 スカイ</span>
+              </button>
+            </div>
+          </div>
+
+          <button id="btn-close-shop" class="btn-primary btn-close">
+            <span>とじる</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 設定モーダル -->
     <div id="settings-modal" class="overlay-screen hidden">
       <div class="modal-card">
@@ -363,7 +423,10 @@
                     <polygon points="12,3 19,12 12,21 5,12" fill="#ffe159" stroke="#d99616" stroke-width="2" stroke-linejoin="round"/>
                   </svg>
                 </span>
-                <span id="clear-sky-label" class="setting-label">もってるスカイのきろくをけす</span>
+                <span class="setting-text-col">
+                  <span id="clear-sky-label" class="setting-label">もってるスカイのきろくをけす</span>
+                  <span class="setting-sub">※かったアイテムも初期化されます</span>
+                </span>
               </span>
               <span id="clear-sky-badge" class="setting-badge">RESET</span>
             </button>
@@ -400,6 +463,7 @@
   <script src="js/structureBase.js"></script>
   <script src="js/cloudBuildings.js"></script>
   <script src="js/castleIsland.js"></script>
+  <script src="js/shopIsland.js"></script>
   <script src="js/fountainCloud.js"></script>
   <script src="js/cumulonimbusCloud.js"></script>
   <script src="js/world.js"></script>

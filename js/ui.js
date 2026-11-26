@@ -6,6 +6,7 @@ class UIManager {
     this.titleScreen = document.getElementById('title-screen');
     this.joinModal = document.getElementById('join-modal');
     this.chatModal = document.getElementById('chat-modal');
+    this.shopModal = document.getElementById('shop-modal');
     this.settingsModal = document.getElementById('settings-modal');
     this.respawnFlash = document.getElementById('respawn-flash');
     this.dialogueBox = document.getElementById('dialogue-box');
@@ -14,6 +15,7 @@ class UIManager {
     this.dialogueAvatarHeart = document.getElementById('dialogue-avatar-heart');
     this.dialogueAvatarStar = document.getElementById('dialogue-avatar-star');
     this.dialogueAvatarPurple = document.getElementById('dialogue-avatar-purple');
+    this.dialogueAvatarAngel = document.getElementById('dialogue-avatar-angel');
     this.dialogueChoices = document.getElementById('dialogue-choices');
     this.btnDialogueYes = document.getElementById('btn-dialogue-yes');
     this.btnDialogueNo = document.getElementById('btn-dialogue-no');
@@ -27,9 +29,15 @@ class UIManager {
     this.skyCounterEl = document.getElementById('sky-counter');
     this.skyCountValueEl = document.getElementById('sky-count-value');
     this.btnWarpPartner = document.getElementById('btn-warp-partner');
+    this.btnWings = document.getElementById('btn-wings');
+    this.wingsBtnLabel = document.getElementById('wings-btn-label');
     this.btnChat = document.getElementById('btn-chat');
     this.btnChatClear = document.getElementById('btn-chat-clear');
     this.joystickKnob = document.getElementById('joystick-knob');
+
+    this.shopSkyBalanceEl = document.getElementById('shop-sky-balance');
+    this.shopItemWingsCard = document.getElementById('shop-item-wings');
+    this.btnBuyWings = document.getElementById('btn-buy-wings');
 
     this.localBubble = document.getElementById('local-chat-bubble');
     this.localBubbleText = document.getElementById('local-chat-bubble-text');
@@ -61,6 +69,7 @@ class UIManager {
     };
     stopProp(document.getElementById('btn-settings'));
     stopProp(this.btnWarpPartner);
+    stopProp(this.btnWings);
     stopProp(this.btnChat);
     stopProp(this.btnChatClear);
     stopProp(this.roomBadge);
@@ -69,14 +78,27 @@ class UIManager {
 
     this.btnDialogueYes.addEventListener('click', (e) => {
       e.currentTarget.blur();
-      if (!game.isPlaying || !game.isStarAsking) return;
+      if (!game.isPlaying) return;
+      if (game.isShopAsking) {
+        game.sound.playClick();
+        game.openShopFromDialogue();
+        return;
+      }
+      if (!game.isStarAsking) return;
       game.sound.playStarGreet();
       game.acceptStarTag();
     });
 
     this.btnDialogueNo.addEventListener('click', (e) => {
       e.currentTarget.blur();
-      if (!game.isPlaying || !game.isStarAsking) return;
+      if (!game.isPlaying) return;
+      if (game.isShopAsking) {
+        game.sound.playClick();
+        game.isShopAsking = false;
+        this.hideDialogue();
+        return;
+      }
+      if (!game.isStarAsking) return;
       game.sound.playClick();
       game.isStarAsking = false;
       game.world.starBuddy.cancelAsking();
@@ -163,6 +185,23 @@ class UIManager {
       game.sound.playRespawn();
       game.sendSe('respawn');
       game.warpToPartner();
+    });
+
+    this.btnWings.addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      if (!game.isPlaying || game.isPaused || game.isAreaTransitioning) return;
+      game.toggleWingsEquipped();
+    });
+
+    this.btnBuyWings.addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      game.buyAngelWings();
+    });
+
+    document.getElementById('btn-close-shop').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      game.sound.playClick();
+      this.closeShopModal();
     });
 
     this.btnChat.addEventListener('click', (e) => {
@@ -310,11 +349,11 @@ class UIManager {
         clearSkyConfirmTimer = setTimeout(resetClearSkyButtonState, 3500);
         return;
       }
-      game.resetSkyCount();
+      game.resetSkyAndItems();
       resetClearSkyButtonState();
       game.isPaused = false;
       this.settingsModal.classList.add('hidden');
-      this.showToast('もってるスカイのきろくをけしました', 2.8);
+      this.showToast('もってるスカイとアイテムのきろくをけしました', 3.0);
     });
 
     document.getElementById('btn-back-title').addEventListener('click', (e) => {
@@ -349,6 +388,46 @@ class UIManager {
     this.inputChatText.blur();
     this.chatModal.classList.add('hidden');
     this.game.isPaused = false;
+  }
+
+  openShopModal() {
+    this.game.isPaused = true;
+    this.game.controls.reset();
+    this.refreshShopUI();
+    this.shopModal.classList.remove('hidden');
+  }
+
+  closeShopModal() {
+    this.shopModal.classList.add('hidden');
+    this.game.isPaused = false;
+    this.hideDialogue();
+  }
+
+  refreshShopUI() {
+    const game = this.game;
+    const owned = !!game.ownedItems.angel_wings;
+    if (this.shopSkyBalanceEl) {
+      this.shopSkyBalanceEl.textContent = String(game.skyCount);
+    }
+    if (this.shopItemWingsCard) {
+      this.shopItemWingsCard.classList.toggle('owned', owned);
+    }
+    if (this.btnBuyWings) {
+      this.btnBuyWings.disabled = owned;
+      const span = this.btnBuyWings.querySelector('span');
+      if (span) {
+        span.textContent = owned ? 'かったよ' : '100 スカイ';
+      }
+    }
+  }
+
+  updateWingsButton(visible, equipped) {
+    if (!this.btnWings) return;
+    this.btnWings.classList.toggle('hidden', !visible);
+    this.btnWings.classList.toggle('equipped', !!equipped);
+    if (this.wingsBtnLabel) {
+      this.wingsBtnLabel.textContent = equipped ? 'はずす' : 'とぶ';
+    }
   }
 
   _toggleFullscreen() {
@@ -412,18 +491,23 @@ class UIManager {
     this.toastTimer = duration;
   }
 
-  showDialogue(message, duration = 4.5, speaker = 'heart', showChoices = false) {
+  showDialogue(message, duration = 4.5, speaker = 'heart', showChoices = false, yesText = 'うん', noText = 'またこんど') {
     const isStar = speaker === 'star';
     const isPurple = speaker === 'purple';
+    const isAngel = speaker === 'angel';
     this.dialogueBox.classList.toggle('star', isStar);
     this.dialogueBox.classList.toggle('purple', isPurple);
+    this.dialogueBox.classList.toggle('angel', isAngel);
     this.dialogueSpeaker.textContent = isStar
       ? 'スターくん'
-      : (isPurple ? 'むらさきまいまい' : 'ハートちゃん');
-    this.dialogueAvatarHeart.classList.toggle('hidden', isStar || isPurple);
+      : (isPurple ? 'むらさきまいまい' : (isAngel ? 'おみせの天使' : 'ハートちゃん'));
+    this.dialogueAvatarHeart.classList.toggle('hidden', isStar || isPurple || isAngel);
     this.dialogueAvatarStar.classList.toggle('hidden', !isStar);
     this.dialogueAvatarPurple.classList.toggle('hidden', !isPurple);
+    this.dialogueAvatarAngel.classList.toggle('hidden', !isAngel);
     this.dialogueText.textContent = message;
+    this.btnDialogueYes.textContent = yesText;
+    this.btnDialogueNo.textContent = noText;
     this.dialogueChoices.classList.toggle('hidden', !showChoices);
     this.dialogueBox.classList.remove('hidden');
     this.dialogueTimer = duration;
@@ -474,6 +558,7 @@ class UIManager {
     this.titleScreen.classList.add('hidden');
     this.joinModal.classList.add('hidden');
     this.chatModal.classList.add('hidden');
+    this.shopModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.hideSliderTimer();
     this.hud.classList.remove('hidden');
@@ -503,11 +588,13 @@ class UIManager {
 
   applyBackToTitleUI() {
     this.chatModal.classList.add('hidden');
+    this.shopModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.hideSliderTimer();
     this.hud.classList.add('hidden');
     this.roomBadge.classList.add('hidden');
     this.btnWarpPartner.classList.add('hidden');
+    this.btnWings.classList.add('hidden');
     this.btnChatClear.classList.add('hidden');
     this.toastBanner.classList.add('hidden');
     this.localBubble.classList.add('hidden');

@@ -45,6 +45,11 @@ class SkyWorld {
     // お城の浮島（スタート地点正面から見える位置に常駐）
     this.castleIsland = this.addStructure(new CastleIsland(new THREE.Vector3(0, 3.5, -74)));
 
+    // スタート地点左前方のお店（常駐）
+    this.shopIsland = this.addStructure(
+      new ShopIsland(new THREE.Vector3(-27, 1.8, -26), this.scene, { yaw: 0.68 })
+    );
+
     // スタート地点後方の巨大な入道雲（登山できる）
     this.cumulonimbus = this.addStructure(new CumulonimbusCloud(new THREE.Vector3(0, 0, 165)));
 
@@ -739,9 +744,14 @@ class SkyWorld {
       let connectCloud = null;
       let bestFrontDist = Infinity;
       for (const c of nearIslands) {
-        const isFrontSide = st.id === 'cumulonimbus'
-          ? c.basePos.z < stPos.z - 6.0
-          : c.basePos.z > stPos.z + 6.0;
+        let isFrontSide = false;
+        if (st.id === 'cumulonimbus') {
+          isFrontSide = c.basePos.z < stPos.z - 6.0;
+        } else if (st.id === 'shop') {
+          isFrontSide = c.basePos.z > stPos.z + 5.0 && c.basePos.x > stPos.x + 2.0;
+        } else {
+          isFrontSide = c.basePos.z > stPos.z + 6.0;
+        }
         if (isFrontSide) {
           const d = Math.hypot(c.basePos.x - stPos.x, c.basePos.z - stPos.z);
           if (d < bestFrontDist) {
@@ -1025,10 +1035,13 @@ class SkyWorld {
       chunkClouds.push(this._createCloud(0, 0, 0, 'island', 0, false));
       chunkClouds.push(this._createCloud(0, 1.0, -14, 'normal', 1, false));
       chunkClouds.push(this._createCloud(10, 2.0, -19, 'bouncy', 2, false));
-      chunkClouds.push(this._createCloud(-12, 1.5, -16, 'moving', 3, false));
+      chunkClouds.push(this._createCloud(-9, 1.5, -21, 'moving', 3, false));
       chunkClouds.push(this._createCloud(15, 0.8, 4, 'island', 4, 'single_corner'));
       chunkClouds.push(this._createCloud(-14, 1.0, 8, 'normal', 5, 'single_small'));
       chunkClouds.push(this._createCloud(0, 1.6, 16, 'bouncy', 6, false));
+
+      // お店へ渡りやすい足場用の白い雲
+      chunkClouds.push(this._createCloud(-13.5, 1.2, -12.5, 'normal', 18, false));
 
       chunkClouds.push(this._createCloud(10, 1.5, -7, 'yellow', 201, false));
       chunkClouds.push(this._createCloud(-15, 1.4, -3.5, 'yellow', 202, false));

@@ -27,6 +27,7 @@ class PhysicsSystem {
       player.position.add(player.groundCloud.deltaPos);
     }
 
+    const hasWings = !!player.hasWingsEquipped;
     const forward = this._tmpForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw));
     const right = this._tmpRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
 
@@ -41,7 +42,7 @@ class PhysicsSystem {
       wishDir.normalize();
       const targetVx = wishDir.x * maxSpeed * inputMag;
       const targetVz = wishDir.z * maxSpeed * inputMag;
-      const grip = player.isGrounded ? 15.0 : 5.5;
+      const grip = player.isGrounded ? 15.0 : (hasWings ? 7.8 : 5.5);
       const alpha = 1 - Math.exp(-grip * dt);
       player.velocity.x = THREE.MathUtils.lerp(player.velocity.x, targetVx, alpha);
       player.velocity.z = THREE.MathUtils.lerp(player.velocity.z, targetVz, alpha);
@@ -66,30 +67,48 @@ class PhysicsSystem {
 
     if (player.jumpBufferTimer > 0) {
       if (player.coyoteTimer > 0) {
-        player.velocity.y = 14.5;
+        player.velocity.y = hasWings ? 13.8 : 14.5;
         player.isGrounded = false;
         player.groundCloud = null;
-        player.airJumpsLeft = 1;
+        player.airJumpsLeft = player.getMaxAirJumps();
         player.jumpBufferTimer = 0;
         player.coyoteTimer = 0;
         player.triggerSquash(1.38);
         player.setExpression('jump', 0.4);
-        sound.playJump();
-        sendSeFn('jump');
+        if (hasWings) {
+          player.triggerWingFlap();
+          sound.playWingFlap();
+          sendSeFn('wing');
+        } else {
+          sound.playJump();
+          sendSeFn('jump');
+        }
       } else if (player.airJumpsLeft > 0) {
-        player.velocity.y = 13.6;
+        player.velocity.y = hasWings ? 10.8 : 13.6;
         player.airJumpsLeft--;
         player.jumpBufferTimer = 0;
         player.triggerSquash(1.42);
         player.setExpression('happy', 0.45);
         player.spawnDoubleJumpRing();
-        sound.playDoubleJump();
+        if (hasWings) {
+          player.triggerWingFlap();
+          sound.playWingFlap();
+        } else {
+          sound.playDoubleJump();
+        }
         didDoubleJump = true;
       }
     }
 
-    player.velocity.y -= 32.0 * dt;
-    player.velocity.y = Math.max(player.velocity.y, -28);
+    let gravity = 32.0;
+    let maxFall = -28;
+    if (hasWings) {
+      gravity = player.velocity.y > 0 ? 19.5 : 13.0;
+      maxFall = -7.6;
+    }
+
+    player.velocity.y -= gravity * dt;
+    player.velocity.y = Math.max(player.velocity.y, maxFall);
 
     player.position.addScaledVector(player.velocity, dt);
 
@@ -104,7 +123,7 @@ class PhysicsSystem {
     if (structHit.hitGround) {
       player.isGrounded = true;
       player.groundCloud = null;
-      player.airJumpsLeft = 1;
+      player.airJumpsLeft = player.getMaxAirJumps();
 
       if (!wasGrounded && structHit.hardLandingVn < -4.5) {
         player.triggerSquash(0.66);
@@ -195,7 +214,7 @@ class PhysicsSystem {
             if (cloud.type === 'bouncy') {
               player.velocity.y = 22.0;
               player.isGrounded = false;
-              player.airJumpsLeft = 1;
+              player.airJumpsLeft = player.getMaxAirJumps();
               player.triggerSquash(1.48);
               player.setExpression('happy', 0.55);
               sound.playBounce();
@@ -203,7 +222,7 @@ class PhysicsSystem {
             } else {
               player.isGrounded = true;
               player.groundCloud = cloud;
-              player.airJumpsLeft = 1;
+              player.airJumpsLeft = player.getMaxAirJumps();
 
               if (!wasGrounded && vn < -4.5) {
                 player.triggerSquash(0.66);
@@ -241,7 +260,7 @@ class PhysicsSystem {
         if (bHit.hitGround) {
           player.isGrounded = true;
           player.groundCloud = cloud;
-          player.airJumpsLeft = 1;
+          player.airJumpsLeft = player.getMaxAirJumps();
 
           if (!wasGrounded && bHit.hardLandingVn < -4.5) {
             player.triggerSquash(0.66);
@@ -277,7 +296,7 @@ class PhysicsSystem {
         p.set(rp.x, rp.y + minDist - 0.04, rp.z);
         player.velocity.set(0, 0, 0);
         player.isGrounded = true;
-        player.airJumpsLeft = 1;
+        player.airJumpsLeft = player.getMaxAirJumps();
 
         if (!wasGrounded) {
           player.triggerSquash(0.76);

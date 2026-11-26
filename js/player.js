@@ -1,4 +1,28 @@
 class Player {
+  static _getSharedWingGeo() {
+    if (Player._wingGeo) return Player._wingGeo;
+
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(0, 0);
+    wingShape.bezierCurveTo(-0.16, 0.16, -0.44, 0.34, -0.68, 0.25);
+    wingShape.bezierCurveTo(-0.80, 0.17, -0.72, -0.02, -0.50, -0.08);
+    wingShape.bezierCurveTo(-0.57, -0.18, -0.45, -0.30, -0.23, -0.20);
+    wingShape.bezierCurveTo(-0.12, -0.14, -0.05, -0.07, 0, -0.07);
+    wingShape.closePath();
+
+    const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
+      depth: 0.045,
+      bevelEnabled: true,
+      bevelThickness: 0.022,
+      bevelSize: 0.018,
+      bevelSegments: 2,
+      curveSegments: 10
+    });
+    wingGeo.translate(0, 0, -0.0225);
+    Player._wingGeo = wingGeo;
+    return wingGeo;
+  }
+
   constructor(scene, options = {}) {
     this.scene = scene;
     this.radius = 0.6;
@@ -11,7 +35,10 @@ class Player {
     this.groundCloud = null;
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
-    this.airJumpsLeft = 1; // 2段ジャンプ用
+    this.hasWingsEquipped = false;
+    this.wingFlapTimer = 0;
+    this.wingAnimTime = 0;
+    this.airJumpsLeft = 1; // 2段ジャンプ（羽装備時は5回）
     this.isRidingPartner = false; // 仲間の頭に乗っている状態
 
     // リモート補間ターゲット
@@ -87,6 +114,8 @@ class Player {
     this.outlineMesh = new THREE.Mesh(outlineGeo, outlineMat);
     this.bodyPivot.add(this.outlineMesh);
 
+    this._createWings();
+
     const shadowGeo = new THREE.CircleGeometry(this.radius * 0.95, 24);
     const shadowMat = new THREE.MeshBasicMaterial({
       color: 0x628eb8,
@@ -97,6 +126,82 @@ class Player {
     this.dropShadow = new THREE.Mesh(shadowGeo, shadowMat);
     this.dropShadow.visible = false;
     this.scene.add(this.dropShadow);
+  }
+
+  _createWings() {
+    const wingGeo = Player._getSharedWingGeo();
+    const wingMat = new THREE.MeshToonMaterial({ color: 0xf4f9ff });
+    const wingOutlineMat = new THREE.MeshBasicMaterial({
+      color: 0x465275,
+      side: THREE.BackSide
+    });
+
+    this.wingHolder = new THREE.Group();
+    this.wingHolder.visible = false;
+    this.rollHolder.add(this.wingHolder);
+
+    this.leftWingPivot = new THREE.Group();
+    this.leftWingPivot.position.set(-0.14, 0.12, -0.52);
+    this.leftWingPivot.add(new THREE.Mesh(wingGeo, wingMat));
+    const leftWingOut = new THREE.Mesh(wingGeo, wingOutlineMat);
+    leftWingOut.scale.set(1.08, 1.08, 1.28);
+    this.leftWingPivot.add(leftWingOut);
+    this.wingHolder.add(this.leftWingPivot);
+
+    this.rightWingPivot = new THREE.Group();
+    this.rightWingPivot.position.set(0.14, 0.12, -0.52);
+    this.rightWingPivot.scale.x = -1;
+    this.rightWingPivot.add(new THREE.Mesh(wingGeo, wingMat));
+    const rightWingOut = new THREE.Mesh(wingGeo, wingOutlineMat);
+    rightWingOut.scale.set(1.08, 1.08, 1.28);
+    this.rightWingPivot.add(rightWingOut);
+    this.wingHolder.add(this.rightWingPivot);
+  }
+
+  getMaxAirJumps() {
+    return this.hasWingsEquipped ? 5 : 1;
+  }
+
+  setWingsEquipped(equipped) {
+    const next = !!equipped;
+    if (this.hasWingsEquipped === next) return;
+    this.hasWingsEquipped = next;
+    if (this.wingHolder) {
+      this.wingHolder.visible = next;
+    }
+    if (next) {
+      this.airJumpsLeft = this.isGrounded ? 5 : Math.max(this.airJumpsLeft, 5);
+      this.triggerWingFlap();
+    } else {
+      this.airJumpsLeft = Math.min(this.airJumpsLeft, 1);
+    }
+  }
+
+  triggerWingFlap() {
+    this.wingFlapTimer = 0.36;
+  }
+
+  _updateWingAnimation(dt) {
+    if (!this.wingHolder) return;
+    this.wingHolder.visible = this.hasWingsEquipped;
+    if (!this.hasWingsEquipped) return;
+
+    if (this.wingFlapTimer > 0) {
+      this.wingFlapTimer = Math.max(0, this.wingFlapTimer - dt);
+    }
+
+    const isFlappingHard = this.wingFlapTimer > 0;
+    const flapSpeed = isFlappingHard ? 20.0 : (!this.isGrounded ? 12.0 : 5.2);
+    const flapAmp = isFlappingHard ? 0.64 : (!this.isGrounded ? 0.42 : 0.18);
+
+    this.wingAnimTime += dt * flapSpeed;
+    const flap = Math.sin(this.wingAnimTime) * flapAmp;
+    const liftZ = Math.sin(this.wingAnimTime) * (flapAmp * 0.32);
+
+    this.leftWingPivot.rotation.y = -0.58 + flap * 0.62;
+    this.leftWingPivot.rotation.z = liftZ;
+    this.rightWingPivot.rotation.y = 0.58 - flap * 0.62;
+    this.rightWingPivot.rotation.z = -liftZ;
   }
 
   setColorTheme(theme) {
@@ -271,7 +376,7 @@ class Player {
     this.isGrounded = false;
     this.groundCloud = null;
     this.isRidingPartner = false;
-    this.airJumpsLeft = 1;
+    this.airJumpsLeft = this.getMaxAirJumps();
     this.rollQuat.setFromAxisAngle(this._tmpAxisY, this.facingYaw);
     this.remoteTargetQuat.copy(this.rollQuat);
     this.triggerSquash(1.3);
@@ -377,6 +482,7 @@ class Player {
     }
 
     this.rollHolder.quaternion.copy(this.rollQuat);
+    this._updateWingAnimation(dt);
     this._updateDropShadow(shadowInfo);
   }
 
@@ -388,6 +494,9 @@ class Player {
     this.remoteTargetSquash = state.sq;
     this.isGrounded = !!state.g;
     this.isRidingPartner = !!state.rd;
+    if (typeof state.wg !== 'undefined') {
+      this.setWingsEquipped(!!state.wg);
+    }
     if (state.ex && this.expression !== state.ex) {
       this.setExpression(state.ex);
     }
@@ -418,12 +527,18 @@ class Player {
     this.rollQuat.slerp(this.remoteTargetQuat, posAlpha);
     this.squashY = THREE.MathUtils.lerp(this.squashY, this.remoteTargetSquash, posAlpha);
 
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    if (horizSpeed > 0.35) {
+      this.facingYaw = Math.atan2(this.velocity.x, this.velocity.z);
+    }
+
     const xzScale = 1 / Math.sqrt(this.squashY);
     this.bodyPivot.scale.set(xzScale, this.squashY, xzScale);
 
     const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
     this.group.position.set(this.position.x, this.position.y + bottomOffset, this.position.z);
     this.rollHolder.quaternion.copy(this.rollQuat);
+    this._updateWingAnimation(dt);
     this._updateDropShadow(shadowInfo);
   }
 
@@ -455,3 +570,5 @@ class Player {
     this.jumpRings = [];
   }
 }
+
+Player._wingGeo = null;

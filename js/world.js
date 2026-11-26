@@ -78,6 +78,20 @@ class SkyWorld {
     this.starBuddy = new StarBuddy(new THREE.Vector3(15, 4.0, 4));
     this.scene.add(this.starBuddy.group);
     this.scene.add(this.starBuddy.dropShadow);
+
+    // モブの天使（計10体：お城の島に1体＋周囲の雲に9体）
+    this.angels = [];
+    this.angels.push(
+      new AngelMob(this.scene, {
+        homeType: 'castle',
+        castleIsland: this.castleIsland,
+        localX: -2.4,
+        localZ: 6.4
+      })
+    );
+    for (let i = 0; i < 9; i++) {
+      this.angels.push(new AngelMob(this.scene, { homeType: 'cloud' }));
+    }
   }
 
   addStructure(structure) {
@@ -699,6 +713,53 @@ class SkyWorld {
         this._assignStarHomeCloud(playerPos);
       }
       this.starBuddy.update(dt, playerPos, this, partnerPos);
+    }
+
+    this._updateAngels(dt, playerPos);
+  }
+
+  _updateAngels(dt, playerPos) {
+    const usedClouds = new Set();
+    for (const angel of this.angels) {
+      if (angel.homeType !== 'cloud') continue;
+      if (angel.homeCloud) {
+        const missing = !this.clouds.includes(angel.homeCloud);
+        const dist = Math.hypot(
+          angel.homeCloud.position.x - playerPos.x,
+          angel.homeCloud.position.z - playerPos.z
+        );
+        if (missing || dist > 82) {
+          angel.setHomeCloud(null);
+        } else {
+          usedClouds.add(angel.homeCloud);
+        }
+      }
+    }
+
+    for (const angel of this.angels) {
+      if (angel.homeType === 'cloud' && !angel.homeCloud) {
+        let bestCloud = null;
+        let bestScore = Infinity;
+
+        for (const c of this.clouds) {
+          if ((c.type !== 'island' && c.type !== 'normal') || usedClouds.has(c)) continue;
+          if (c.isHeartHome) continue;
+          const d = Math.hypot(c.position.x - playerPos.x, c.position.z - playerPos.z);
+          if (d < 6 || d > 72) continue;
+          const score = Math.abs(d - 20) + (c.type === 'island' ? 0 : 6);
+          if (score < bestScore) {
+            bestScore = score;
+            bestCloud = c;
+          }
+        }
+
+        if (bestCloud) {
+          angel.setHomeCloud(bestCloud);
+          usedClouds.add(bestCloud);
+        }
+      }
+
+      angel.update(this.time, dt, playerPos);
     }
   }
 

@@ -2,11 +2,19 @@ class SoundManager {
   constructor() {
     this.ctx = null;
     this.enabled = true;
-    this.bgmTimer = null;
-    this.bgmStep = 0;
     this.isPlayingBgm = false;
     this.bgmMode = 'default';
+    this.defaultBgmAudio = null;
     this.sliderBgmAudio = null;
+  }
+
+  _ensureDefaultBgm() {
+    if (!this.defaultBgmAudio && typeof Audio !== 'undefined') {
+      this.defaultBgmAudio = new Audio('sounds/BGM.mp3');
+      this.defaultBgmAudio.loop = true;
+      this.defaultBgmAudio.volume = 0.42;
+    }
+    return this.defaultBgmAudio;
   }
 
   _ensureSliderBgm() {
@@ -144,9 +152,9 @@ class SoundManager {
     this.isPlayingBgm = true;
 
     if (this.bgmMode === 'mini_skySlider') {
-      if (this.bgmTimer) {
-        clearInterval(this.bgmTimer);
-        this.bgmTimer = null;
+      if (this.defaultBgmAudio) {
+        this.defaultBgmAudio.pause();
+        this.defaultBgmAudio.currentTime = 0;
       }
       const audio = this._ensureSliderBgm();
       if (audio) {
@@ -158,45 +166,20 @@ class SoundManager {
 
     if (this.sliderBgmAudio) {
       this.sliderBgmAudio.pause();
+      this.sliderBgmAudio.currentTime = 0;
     }
-    if (this.bgmTimer) return;
 
-    const melody = [
-      523.25, 0, 659.25, 783.99, 0, 659.25, 587.33, 523.25,
-      659.25, 0, 783.99, 880.00, 0, 783.99, 659.25, 587.33,
-      523.25, 587.33, 659.25, 783.99, 880.00, 0, 783.99, 659.25,
-      587.33, 0, 659.25, 523.25, 0, 392.00, 523.25, 0
-    ];
-
-    const bass = [
-      261.63, 0, 0, 0, 196.00, 0, 0, 0,
-      220.00, 0, 0, 0, 196.00, 0, 0, 0,
-      174.61, 0, 0, 0, 196.00, 0, 0, 0,
-      196.00, 0, 0, 0, 261.63, 0, 0, 0
-    ];
-
-    const stepMs = 210;
-    this.bgmTimer = setInterval(() => {
-      if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
-      const idx = this.bgmStep % melody.length;
-      const mFreq = melody[idx];
-      const bFreq = bass[idx];
-
-      if (mFreq > 0) {
-        this.playTone(mFreq, mFreq, 0.19, 'sine', 0.045);
-      }
-      if (bFreq > 0) {
-        this.playTone(bFreq, bFreq, 0.36, 'triangle', 0.035);
-      }
-      this.bgmStep++;
-    }, stepMs);
+    const defaultAudio = this._ensureDefaultBgm();
+    if (defaultAudio && defaultAudio.paused) {
+      defaultAudio.play().catch(() => {});
+    }
   }
 
   stopBgm() {
     this.isPlayingBgm = false;
-    if (this.bgmTimer) {
-      clearInterval(this.bgmTimer);
-      this.bgmTimer = null;
+    if (this.defaultBgmAudio) {
+      this.defaultBgmAudio.pause();
+      this.defaultBgmAudio.currentTime = 0;
     }
     if (this.sliderBgmAudio) {
       this.sliderBgmAudio.pause();

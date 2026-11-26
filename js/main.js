@@ -22,6 +22,7 @@ class MaimaiGame {
     // NPCふれあい状態
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
+    this.isTouchingPurple = false;
     this.isStarAsking = false;
 
     // スカイスライダー用カメラオフセット
@@ -558,6 +559,7 @@ class MaimaiGame {
     this.physics.resetCooldowns();
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
+    this.isTouchingPurple = false;
     this.isStarAsking = false;
 
     const isYellow = mode === 'guest';
@@ -576,6 +578,7 @@ class MaimaiGame {
     this.player.safeFallbackPos.set(0, 4.5, 0);
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
+    this.world.purpleBuddy.reset();
     this.camYaw = 0;
     this.camPitch = 0.36;
 
@@ -600,6 +603,7 @@ class MaimaiGame {
     this.physics.resetCooldowns();
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
+    this.isTouchingPurple = false;
     this.isStarAsking = false;
 
     this.player.setScene(this.scene);
@@ -608,6 +612,7 @@ class MaimaiGame {
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
+    this.world.purpleBuddy.reset();
   }
 
   onResize() {
@@ -939,6 +944,27 @@ class MaimaiGame {
         }
       } else if (heartDist > 4.2) {
         this.isTouchingHeart = false;
+      }
+
+      const purpleDist = this.player.position.distanceTo(this.world.purpleBuddy.anchorPos);
+      if (purpleDist < 2.6) {
+        if (!this.isTouchingPurple) {
+          this.isTouchingPurple = true;
+          this.isStarAsking = false;
+          this.world.starBuddy.cancelAsking();
+          this.world.purpleBuddy.setExpression('happy', 4.5);
+          this.player.setExpression('happy', 1.4);
+          this.sound.playHeartGreet();
+          this.sendSe('heart');
+          this.ui.showDialogue(
+            'あれ？こんな高いところのぼれるのボクだけだと思ってた。やるね！',
+            5.0,
+            'purple',
+            false
+          );
+        }
+      } else if (purpleDist > 4.4) {
+        this.isTouchingPurple = false;
       }
 
       const starDist = this.player.position.distanceTo(this.world.starBuddy.position);

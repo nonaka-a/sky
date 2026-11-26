@@ -317,6 +317,26 @@ body.pseudo-fullscreen #game-container {
   background: linear-gradient(90deg, #ffbe3d 0%, #f5941e 100%);
 }
 
+.dialogue-box.purple {
+  box-shadow:
+    0 14px 34px rgba(105, 134, 168, 0.24),
+    0 4px 14px rgba(153, 84, 255, 0.24);
+}
+
+.dialogue-box.purple .dialogue-inner {
+  border-color: rgba(182, 136, 255, 0.55);
+  background: linear-gradient(135deg, rgba(249, 244, 255, 0.9) 0%, rgba(255, 255, 255, 0.8) 100%);
+}
+
+.dialogue-box.purple .dialogue-avatar {
+  background: #f1e6ff;
+  box-shadow: 0 3px 8px rgba(153, 84, 255, 0.22);
+}
+
+.dialogue-box.purple .dialogue-speaker {
+  background: linear-gradient(90deg, #ad73ff 0%, #853ef0 100%);
+}
+
 .dialogue-choices {
   display: flex;
   gap: 8px;

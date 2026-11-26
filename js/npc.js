@@ -1205,3 +1205,220 @@ class StarBuddy {
     this._updateVisualCommon(dt, world);
   }
 }
+
+class PurpleMaimaiBuddy {
+  constructor(anchorPos) {
+    this.anchorPos = anchorPos.clone();
+    this.radius = 0.6;
+    this.facingYaw = Math.PI;
+    this.squashY = 1.0;
+
+    this.expression = 'normal';
+    this.exprTimer = 0;
+    this.blinkTimer = 2.2;
+    this.isBlinking = false;
+
+    this.group = new THREE.Group();
+    this.bodyPivot = new THREE.Group();
+    this.group.add(this.bodyPivot);
+
+    this._createVisuals();
+    this.group.position.copy(this.anchorPos);
+    this.group.rotation.y = this.facingYaw;
+  }
+
+  reset() {
+    this.facingYaw = Math.PI;
+    this.squashY = 1.0;
+    this.group.position.copy(this.anchorPos);
+    this.group.rotation.y = this.facingYaw;
+    this.setExpression('normal');
+  }
+
+  _createVisuals() {
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = 1024;
+    this.canvas.height = 512;
+    this.ctx = this.canvas.getContext('2d');
+    this.texture = new THREE.CanvasTexture(this.canvas);
+    this.texture.encoding = THREE.sRGBEncoding;
+
+    this._drawFace('normal', false);
+
+    const sphereGeo = new THREE.SphereGeometry(this.radius, 36, 36);
+    const sphereMat = new THREE.MeshBasicMaterial({ map: this.texture });
+    this.sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+    this.sphereMesh.rotation.y = -Math.PI / 2;
+    this.bodyPivot.add(this.sphereMesh);
+
+    const outlineGeo = new THREE.SphereGeometry(this.radius * 1.075, 32, 32);
+    const outlineMat = new THREE.MeshBasicMaterial({
+      color: 0x290c42,
+      side: THREE.BackSide
+    });
+    this.bodyPivot.add(new THREE.Mesh(outlineGeo, outlineMat));
+
+    const shadowGeo = new THREE.CircleGeometry(this.radius * 0.95, 24);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x628eb8,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false
+    });
+    this.dropShadow = new THREE.Mesh(shadowGeo, shadowMat);
+    this.dropShadow.rotation.x = -Math.PI / 2;
+    this.dropShadow.position.set(
+      this.anchorPos.x,
+      this.anchorPos.y - this.radius + 0.04,
+      this.anchorPos.z
+    );
+  }
+
+  _drawFace(expr, blinking) {
+    const ctx = this.ctx;
+    const w = 1024;
+    const h = 512;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = '#9954ff';
+    ctx.fillRect(0, 0, w, h);
+
+    const cx = w * 0.5;
+    const cy = h * 0.49;
+
+    ctx.fillStyle = 'rgba(255, 130, 195, 0.48)';
+    ctx.beginPath();
+    ctx.ellipse(cx - 82, cy + 20, 20, 11, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + 82, cy + 20, 20, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const eyeY = cy - 24;
+    const eyeOffsetX = 48;
+
+    if (blinking) {
+      ctx.strokeStyle = '#25073d';
+      ctx.lineWidth = 9;
+      ctx.lineCap = 'round';
+      [-1, 1].forEach((side) => {
+        ctx.beginPath();
+        ctx.arc(cx + side * eyeOffsetX, eyeY + 6, 17, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+      });
+    } else {
+      [-1, 1].forEach((side) => {
+        const ex = cx + side * eyeOffsetX;
+        const ey = eyeY;
+        const eyeRadius = 22;
+
+        const eyeGrad = ctx.createLinearGradient(ex, ey - eyeRadius, ex, ey + eyeRadius);
+        eyeGrad.addColorStop(0, '#160329');
+        eyeGrad.addColorStop(0.7, '#290845');
+        eyeGrad.addColorStop(1, '#581c87');
+
+        ctx.fillStyle = eyeGrad;
+        ctx.beginPath();
+        ctx.arc(ex, ey, eyeRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(ex - 7, ey - 8, 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (expr === 'happy') {
+          ctx.beginPath();
+          ctx.arc(ex + 7, ey + 8, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    const mouthY = cy + 20;
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = '#25073d';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    const mouthW = expr === 'happy' ? 64 : 56;
+    const mouthH = expr === 'happy' ? 38 : 30;
+
+    ctx.fillStyle = '#47126b';
+    ctx.beginPath();
+    ctx.moveTo(cx - mouthW, mouthY);
+    ctx.quadraticCurveTo(cx, mouthY + 10, cx + mouthW, mouthY);
+    ctx.quadraticCurveTo(cx + mouthW * 0.75, mouthY + mouthH * 1.4, cx, mouthY + mouthH * 1.4);
+    ctx.quadraticCurveTo(cx - mouthW * 0.75, mouthY + mouthH * 1.4, cx - mouthW, mouthY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = '#8b32b8';
+    ctx.beginPath();
+    ctx.ellipse(cx, mouthY + mouthH * 1.25, mouthW * 0.7, mouthH * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    this.texture.needsUpdate = true;
+  }
+
+  setExpression(expr, duration = 0) {
+    if (this.expression !== expr) {
+      this.expression = expr;
+      this._drawFace(this.expression, this.isBlinking);
+    }
+    if (duration > 0) {
+      this.exprTimer = duration;
+    }
+  }
+
+  update(time, dt, playerPos) {
+    this.blinkTimer -= dt;
+    if (this.blinkTimer <= 0) {
+      this.isBlinking = !this.isBlinking;
+      this.blinkTimer = this.isBlinking ? 0.11 : (2.2 + Math.random() * 2.5);
+      this._drawFace(this.expression, this.isBlinking);
+    }
+
+    if (this.exprTimer > 0) {
+      this.exprTimer -= dt;
+      if (this.exprTimer <= 0) {
+        this.setExpression('normal');
+      }
+    }
+
+    const distPlayer = this.anchorPos.distanceTo(playerPos);
+    let hopY = 0;
+    let targetSquash = 1.0;
+
+    if (distPlayer < 6.5) {
+      const lookYaw = Math.atan2(playerPos.x - this.anchorPos.x, playerPos.z - this.anchorPos.z);
+      const diff = Math.atan2(Math.sin(lookYaw - this.facingYaw), Math.cos(lookYaw - this.facingYaw));
+      this.facingYaw += diff * Math.min(1, dt * 8);
+
+      const bounceWave = Math.max(0, Math.sin(time * 4.8));
+      hopY = bounceWave * 0.24;
+      targetSquash = bounceWave > 0.15 ? 1.12 : 0.92;
+    } else {
+      const idleWave = Math.max(0, Math.sin(time * 2.2));
+      hopY = idleWave * 0.08;
+      targetSquash = 1.0 + Math.sin(time * 2.2) * 0.04;
+    }
+
+    this.squashY = THREE.MathUtils.lerp(this.squashY, targetSquash, Math.min(1, dt * 14));
+    const xzScale = 1 / Math.sqrt(this.squashY);
+    this.bodyPivot.scale.set(xzScale, this.squashY, xzScale);
+
+    const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
+    this.group.position.set(
+      this.anchorPos.x,
+      this.anchorPos.y + hopY + bottomOffset,
+      this.anchorPos.z
+    );
+    this.group.rotation.y = this.facingYaw;
+
+    const shadowScale = THREE.MathUtils.clamp(1.0 - hopY * 0.45, 0.65, 1.0);
+    this.dropShadow.scale.setScalar(shadowScale);
+  }
+}

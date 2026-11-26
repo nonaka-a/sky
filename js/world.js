@@ -71,13 +71,23 @@ class SkyWorld {
     this.rainbowBridges.push(rightCastleBridge);
     this.bridgeIds.add('castle|fountain_right');
 
-    // ワールドに1人だけのハートちゃんとスターくんを生成
+    // ワールドに1人だけのハートちゃんとスターくんとむらさきまいまいを生成
     this.heartBuddy = new HeartBuddy(new THREE.Vector3(16, 5.5, -42));
     this.scene.add(this.heartBuddy.group);
 
     this.starBuddy = new StarBuddy(new THREE.Vector3(15, 4.0, 4));
     this.scene.add(this.starBuddy.group);
     this.scene.add(this.starBuddy.dropShadow);
+
+    const cumPos = this.cumulonimbus.position;
+    const purpleAnchor = new THREE.Vector3(
+      cumPos.x - 2.1,
+      cumPos.y + this.cumulonimbus.summitLocalY - 0.08 + 0.6,
+      cumPos.z + 0.4
+    );
+    this.purpleBuddy = new PurpleMaimaiBuddy(purpleAnchor);
+    this.scene.add(this.purpleBuddy.group);
+    this.scene.add(this.purpleBuddy.dropShadow);
 
     // モブの天使（計10体：お城の島に1体＋周囲の雲に9体）
     this.angels = [];
@@ -715,6 +725,7 @@ class SkyWorld {
       this.starBuddy.update(dt, playerPos, this, partnerPos);
     }
 
+    this.purpleBuddy.update(this.time, dt, playerPos);
     this._updateAngels(dt, playerPos);
   }
 

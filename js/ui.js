@@ -13,6 +13,7 @@ class UIManager {
     this.dialogueText = document.getElementById('dialogue-text');
     this.dialogueAvatarHeart = document.getElementById('dialogue-avatar-heart');
     this.dialogueAvatarStar = document.getElementById('dialogue-avatar-star');
+    this.dialogueAvatarPurple = document.getElementById('dialogue-avatar-purple');
     this.dialogueChoices = document.getElementById('dialogue-choices');
     this.btnDialogueYes = document.getElementById('btn-dialogue-yes');
     this.btnDialogueNo = document.getElementById('btn-dialogue-no');
@@ -364,10 +365,15 @@ class UIManager {
 
   showDialogue(message, duration = 4.5, speaker = 'heart', showChoices = false) {
     const isStar = speaker === 'star';
+    const isPurple = speaker === 'purple';
     this.dialogueBox.classList.toggle('star', isStar);
-    this.dialogueSpeaker.textContent = isStar ? 'スターくん' : 'ハートちゃん';
-    this.dialogueAvatarHeart.classList.toggle('hidden', isStar);
+    this.dialogueBox.classList.toggle('purple', isPurple);
+    this.dialogueSpeaker.textContent = isStar
+      ? 'スターくん'
+      : (isPurple ? 'むらさきまいまい' : 'ハートちゃん');
+    this.dialogueAvatarHeart.classList.toggle('hidden', isStar || isPurple);
     this.dialogueAvatarStar.classList.toggle('hidden', !isStar);
+    this.dialogueAvatarPurple.classList.toggle('hidden', !isPurple);
     this.dialogueText.textContent = message;
     this.dialogueChoices.classList.toggle('hidden', !showChoices);
     this.dialogueBox.classList.remove('hidden');

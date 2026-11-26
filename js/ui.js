@@ -24,6 +24,8 @@ class UIManager {
     this.toastBanner = document.getElementById('toast-banner');
     this.sliderTimerEl = document.getElementById('slider-timer');
     this.sliderTimerValueEl = document.getElementById('slider-timer-value');
+    this.skyCounterEl = document.getElementById('sky-counter');
+    this.skyCountValueEl = document.getElementById('sky-count-value');
     this.btnWarpPartner = document.getElementById('btn-warp-partner');
     this.btnChat = document.getElementById('btn-chat');
     this.btnChatClear = document.getElementById('btn-chat-clear');
@@ -229,11 +231,29 @@ class UIManager {
       clearBadge.classList.remove('on');
     };
 
+    const btnClearSky = document.getElementById('btn-clear-sky');
+    const clearSkyLabel = document.getElementById('clear-sky-label');
+    const clearSkyBadge = document.getElementById('clear-sky-badge');
+    let clearSkyConfirmTimer = null;
+    let clearSkyConfirmArmed = false;
+
+    const resetClearSkyButtonState = () => {
+      clearSkyConfirmArmed = false;
+      if (clearSkyConfirmTimer) {
+        clearTimeout(clearSkyConfirmTimer);
+        clearSkyConfirmTimer = null;
+      }
+      clearSkyLabel.textContent = 'もってるスカイのきろくをけす';
+      clearSkyBadge.textContent = 'RESET';
+      clearSkyBadge.classList.remove('on');
+    };
+
     document.getElementById('btn-settings').addEventListener('click', (e) => {
       e.currentTarget.blur();
       game.sound.playClick();
       game.isPaused = true;
       resetClearButtonState();
+      resetClearSkyButtonState();
       this.settingsModal.classList.remove('hidden');
     });
 
@@ -242,6 +262,7 @@ class UIManager {
       game.sound.playClick();
       game.isPaused = false;
       resetClearButtonState();
+      resetClearSkyButtonState();
       this.settingsModal.classList.add('hidden');
     });
 
@@ -276,6 +297,24 @@ class UIManager {
       game.isPaused = false;
       this.settingsModal.classList.add('hidden');
       this.showToast('タイムアタックのきろくをけしました', 2.8);
+    });
+
+    btnClearSky.addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      game.sound.playClick();
+      if (!clearSkyConfirmArmed) {
+        clearSkyConfirmArmed = true;
+        clearSkyLabel.textContent = 'ほんとうにけす？';
+        clearSkyBadge.textContent = 'もう1回';
+        clearSkyBadge.classList.add('on');
+        clearSkyConfirmTimer = setTimeout(resetClearSkyButtonState, 3500);
+        return;
+      }
+      game.resetSkyCount();
+      resetClearSkyButtonState();
+      game.isPaused = false;
+      this.settingsModal.classList.add('hidden');
+      this.showToast('もってるスカイのきろくをけしました', 2.8);
     });
 
     document.getElementById('btn-back-title').addEventListener('click', (e) => {
@@ -345,6 +384,16 @@ class UIManager {
     this.fullscreenStatusEl.textContent = isFull ? 'ON' : 'OFF';
     this.fullscreenStatusEl.classList.toggle('on', isFull);
     this.game.onResize();
+  }
+
+  updateSkyCount(count, animate = false) {
+    if (!this.skyCountValueEl) return;
+    this.skyCountValueEl.textContent = String(count);
+    if (animate && this.skyCounterEl) {
+      this.skyCounterEl.classList.remove('pop');
+      void this.skyCounterEl.offsetWidth;
+      this.skyCounterEl.classList.add('pop');
+    }
   }
 
   setTitleStatus(msg) {

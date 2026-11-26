@@ -252,4 +252,28 @@ class CumulonimbusCloud extends StructureBase {
       this.flagPivot.rotation.z = Math.cos(time * 2.9) * 0.06;
     }
   }
+
+  getCoinSpots() {
+    const spots = [];
+    const s0 = this.steps[0];
+    const s1 = this.steps[1];
+    const s2 = this.steps[2];
+    const points = [
+      { lx: s0.lx, ly: s0.topY + 0.85, lz: s0.lz },
+      { lx: (s0.lx + s1.lx) * 0.5, ly: (s0.topY + s1.topY) * 0.5 + 0.85, lz: (s0.lz + s1.lz) * 0.5 },
+      { lx: s1.lx, ly: s1.topY + 0.85, lz: s1.lz },
+      { lx: s2.lx, ly: s2.topY + 0.85, lz: s2.lz }
+    ];
+    points.forEach((pt, idx) => {
+      spots.push({
+        id: `cumulonimbus_step_coin_${idx}`,
+        pos: new THREE.Vector3(
+          this.position.x + pt.lx,
+          this.position.y + pt.ly,
+          this.position.z + pt.lz
+        )
+      });
+    });
+    return spots;
+  }
 }

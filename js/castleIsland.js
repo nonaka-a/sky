@@ -337,4 +337,22 @@ class CastleIsland extends StructureBase {
     }
     return null;
   }
+
+  getCoinSpots() {
+    const roofTopWorldY = this.groundWorldY + 5.3 + 0.85;
+    const offsets = [
+      [-1.1, -1.6],
+      [1.1, -1.6],
+      [-1.1, -3.0],
+      [1.1, -3.0]
+    ];
+    return offsets.map(([ox, oz], idx) => ({
+      id: `castle_roof_coin_${idx}`,
+      pos: new THREE.Vector3(
+        this.position.x + ox,
+        roofTopWorldY,
+        this.position.z + oz
+      )
+    }));
+  }
 }

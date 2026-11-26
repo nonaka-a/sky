@@ -388,6 +388,55 @@ button {
   touch-action: none;
 }
 
+/* 右上所持スカイ表示 */
+.sky-counter {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  right: max(78px, calc(env(safe-area-inset-right) + 60px));
+  height: 50px;
+  padding: 0 15px 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 252, 254, 0.88);
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  box-shadow: 0 6px 18px rgba(82, 118, 150, 0.2), 0 0 0 1px rgba(245, 198, 72, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.sky-counter.pop {
+  animation: skyCounterPop 0.28s cubic-bezier(0.22, 1.4, 0.36, 1);
+}
+
+@keyframes skyCounterPop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.16); }
+  100% { transform: scale(1); }
+}
+
+.sky-coin-icon {
+  flex-shrink: 0;
+}
+
+.sky-count-value {
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.sky-count-unit {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-text-soft);
+  margin-top: 2px;
+}
+
 /* 右上設定ボタン */
 .btn-circle {
   position: absolute;
@@ -1177,5 +1226,18 @@ button {
   }
   .slider-timer-value {
     font-size: 17px;
+  }
+  .sky-counter {
+    height: 44px;
+    top: max(21px, calc(env(safe-area-inset-top) + 3px));
+    right: max(74px, calc(env(safe-area-inset-right) + 56px));
+    padding: 0 12px 0 10px;
+    gap: 5px;
+  }
+  .sky-count-value {
+    font-size: 16px;
+  }
+  .sky-count-unit {
+    font-size: 11px;
   }
 }

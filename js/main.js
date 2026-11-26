@@ -6,6 +6,9 @@ class MaimaiGame {
     this.isPaused = false;
     this.isRespawning = false;
 
+    // 通貨（スカイ）管理
+    this.skyCount = this._loadSkyCount();
+
     // エリア管理（'sky' | 'castle' | 'mini_skySlider'）
     this.currentArea = 'sky';
     this.remoteArea = 'sky';
@@ -67,6 +70,7 @@ class MaimaiGame {
     this.controls = new ControlsManager();
     this.physics = new PhysicsSystem();
     this.ui = new UIManager(this);
+    this.ui.updateSkyCount(this.skyCount, false);
 
     this.world.starBuddy.onTagStarted = () => {
       if (!this.isPlaying) return;
@@ -86,6 +90,38 @@ class MaimaiGame {
     this._updateCamera(1.0);
 
     requestAnimationFrame(this._boundLoop);
+  }
+
+  _loadSkyCount() {
+    try {
+      const raw = window.localStorage ? window.localStorage.getItem('maimai_sky_currency') : null;
+      if (raw !== null) {
+        const parsed = parseInt(raw, 10);
+        if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+      }
+    } catch (e) {}
+    return 0;
+  }
+
+  _saveSkyCount() {
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem('maimai_sky_currency', String(this.skyCount));
+      }
+    } catch (e) {}
+  }
+
+  addSky(amount) {
+    if (!amount || amount <= 0) return;
+    this.skyCount += amount;
+    this._saveSkyCount();
+    this.ui.updateSkyCount(this.skyCount, true);
+  }
+
+  resetSkyCount() {
+    this.skyCount = 0;
+    this._saveSkyCount();
+    this.ui.updateSkyCount(this.skyCount, false);
   }
 
   _updateWarpPartnerVisibility() {
@@ -567,6 +603,7 @@ class MaimaiGame {
     this.player.setColorTheme(isYellow ? 'yellow' : 'red');
     this.player.setChatText('');
     this.ui.applyStartGameUI(mode, roomId, isYellow);
+    this.ui.updateSkyCount(this.skyCount, false);
 
     if (mode === 'solo') {
       this._removeRemotePlayer();
@@ -576,6 +613,7 @@ class MaimaiGame {
     this.player.safeCloud = null;
     this.player.safeLocalOffset.set(0, 3.5, 0);
     this.player.safeFallbackPos.set(0, 4.5, 0);
+    this.world.resetSessionCoins();
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
     this.world.purpleBuddy.reset();
@@ -610,6 +648,7 @@ class MaimaiGame {
     this.player.setColorTheme('red');
     this.player.setChatText('');
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
+    this.world.resetSessionCoins();
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
     this.world.purpleBuddy.reset();
@@ -682,6 +721,7 @@ class MaimaiGame {
     } else if (!this.isPlaying) {
       this.camYaw += dt * 0.18;
       this.world.updateChunks(this.player.position, dt);
+      this.world.updateAndCollectCoins(this.player.position, this.player.radius, dt, false);
       const shadowInfo = this.world.getShadowGroundInfo(
         this.player.position.x,
         this.player.position.y,
@@ -930,6 +970,19 @@ class MaimaiGame {
     }
 
     if (this.currentArea === 'sky') {
+      // 硬貨（スカイ）のアニメーション更新と取得判定
+      const gotSky = this.world.updateAndCollectCoins(
+        this.player.position,
+        this.player.radius,
+        dt,
+        !this.isRespawning && !this.isAreaTransitioning
+      );
+      if (gotSky > 0) {
+        this.addSky(gotSky);
+        this.sound.playCoin();
+        this.player.setExpression('happy', 0.45);
+      }
+
       const heartDist = this.player.position.distanceTo(this.world.heartBuddy.group.position);
       if (heartDist < 2.4) {
         if (!this.isTouchingHeart) {

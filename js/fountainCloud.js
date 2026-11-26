@@ -398,4 +398,23 @@ class FountainCloud extends StructureBase {
     }
     this.rainGeo.attributes.position.needsUpdate = true;
   }
+
+  getCoinSpots() {
+    const spots = [];
+    const count = 8;
+    const ringRadius = 2.85;
+    const y = this.position.y + this.waterLocalY + 0.78;
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2;
+      spots.push({
+        id: `${this.id}_coin_${i}`,
+        pos: new THREE.Vector3(
+          this.position.x + Math.cos(ang) * ringRadius,
+          y,
+          this.position.z + Math.sin(ang) * ringRadius
+        )
+      });
+    }
+    return spots;
+  }
 }

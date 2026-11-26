@@ -10,11 +10,20 @@ class SkyWorld {
     this.bridgeIds = new Set();
     this.contrails = [];
     this.time = 0;
+    this.localCoinTime = 0;
     this._tmpShadowNormal = new THREE.Vector3();
     this._tmpBridgeNormal = new THREE.Vector3();
 
+    // 硬貨（スカイ）管理
+    this.cloudCoins = [];
+    this.cloudCoinRespawnMap = new Map(); // id -> respawn localCoinTime
+    this.sessionCoins = [];
+    this.bridgeCoins = [];
+    this.collectedSessionCoins = new Set();
+
     this.puffGeo = new THREE.SphereGeometry(1, 20, 16);
-    this.starGeo = new THREE.OctahedronGeometry(0.55, 0);
+    this.coinGeo = new THREE.OctahedronGeometry(0.55, 0);
+    this.coinGeo.scale(0.92, 1.12, 0.55);
 
     this.materials = {
       normal: new THREE.MeshToonMaterial({ color: 0xffffff }),
@@ -24,7 +33,7 @@ class SkyWorld {
       yellow: new THREE.MeshToonMaterial({ color: 0xffe878 }),
       yellowShade: new THREE.MeshToonMaterial({ color: 0xfad45a }),
       island: new THREE.MeshToonMaterial({ color: 0xffffff }),
-      gold: new THREE.MeshToonMaterial({ color: 0xffd166 })
+      gold: new THREE.MeshToonMaterial({ color: 0xffd84d, emissive: 0x422d00 })
     };
 
     this.rainbowMaterial = this._createRainbowMaterial();
@@ -71,6 +80,9 @@ class SkyWorld {
     this.rainbowBridges.push(rightCastleBridge);
     this.bridgeIds.add('castle|fountain_right');
 
+    // セッション1回限りの硬貨（噴水の水の上・お城の屋根・入道雲の最初の階段）を生成
+    this._initSessionCoins();
+
     // ワールドに1人だけのハートちゃんとスターくんとむらさきまいまいを生成
     this.heartBuddy = new HeartBuddy(new THREE.Vector3(16, 5.5, -42));
     this.scene.add(this.heartBuddy.group);
@@ -102,6 +114,182 @@ class SkyWorld {
     for (let i = 0; i < 9; i++) {
       this.angels.push(new AngelMob(this.scene, { homeType: 'cloud' }));
     }
+  }
+
+  _createCoinEntry(id, basePos, parentObj, kind, phase = 0) {
+    const mesh = new THREE.Mesh(this.coinGeo, this.materials.gold);
+    mesh.position.copy(basePos);
+    parentObj.add(mesh);
+    return {
+      id,
+      kind, // 'cloud' | 'session' | 'bridge'
+      mesh,
+      parentObj,
+      cloud: null,
+      bridge: null,
+      basePos: basePos.clone(),
+      phase,
+      collecting: false,
+      collectAge: 0
+    };
+  }
+
+  _initSessionCoins() {
+    const spotGroups = [
+      this.leftFountainCloud.getCoinSpots(),
+      this.rightFountainCloud.getCoinSpots(),
+      this.castleIsland.getCoinSpots(),
+      this.cumulonimbus.getCoinSpots()
+    ];
+
+    spotGroups.forEach((spots) => {
+      spots.forEach((sp, idx) => {
+        const entry = this._createCoinEntry(sp.id, sp.pos, this.scene, 'session', idx * 0.7);
+        this.sessionCoins.push(entry);
+      });
+    });
+  }
+
+  _spawnCumulonimbusBridgeCoins(bridge) {
+    const sValues = [0.22, 0.48, 0.74, 0.96];
+    sValues.forEach((s, idx) => {
+      const id = `cumulonimbus_bridge_coin_${idx}`;
+      const cx = bridge.p0.x + bridge.dirX * (s * bridge.lenXZ);
+      const cz = bridge.p0.z + bridge.dirZ * (s * bridge.lenXZ);
+      const cy = bridge.getSurfaceY(s) + 0.85;
+      const entry = this._createCoinEntry(
+        id,
+        new THREE.Vector3(cx, cy, cz),
+        this.scene,
+        'bridge',
+        idx * 0.85
+      );
+      entry.bridge = bridge;
+      entry.mesh.visible = !this.collectedSessionCoins.has(id);
+      this.bridgeCoins.push(entry);
+    });
+  }
+
+  resetSessionCoins() {
+    this.collectedSessionCoins.clear();
+    for (const coin of this.sessionCoins) {
+      coin.collecting = false;
+      coin.collectAge = 0;
+      coin.mesh.scale.setScalar(1.0);
+      coin.mesh.position.copy(coin.basePos);
+      coin.mesh.visible = true;
+    }
+    for (const coin of this.bridgeCoins) {
+      coin.collecting = false;
+      coin.collectAge = 0;
+      coin.mesh.scale.setScalar(1.0);
+      coin.mesh.position.copy(coin.basePos);
+      coin.mesh.visible = !coin.bridge || coin.bridge.mesh.visible;
+    }
+  }
+
+  updateAndCollectCoins(playerPos, playerRadius, dt, canCollect) {
+    let collectedCount = 0;
+    const hitDist = playerRadius + 0.98;
+    const hitDistSq = hitDist * hitDist;
+
+    const processCoin = (coin, wx, wy, wz, baseLocalY, isAvailable, onCollect) => {
+      if (coin.collecting) {
+        coin.collectAge += dt;
+        const t = coin.collectAge / 0.34;
+        if (t >= 1.0) {
+          coin.collecting = false;
+          coin.mesh.visible = false;
+          coin.mesh.scale.setScalar(1.0);
+          coin.mesh.position.y = baseLocalY;
+        } else {
+          coin.mesh.visible = true;
+          coin.mesh.position.y = baseLocalY + Math.sin(t * Math.PI * 0.5) * 1.45;
+          coin.mesh.rotation.y += dt * 16.0;
+          const sc = t < 0.25
+            ? THREE.MathUtils.lerp(1.0, 1.35, t / 0.25)
+            : THREE.MathUtils.lerp(1.35, 0.0, (t - 0.25) / 0.75);
+          coin.mesh.scale.setScalar(Math.max(0.001, sc));
+        }
+        return;
+      }
+
+      if (!isAvailable) {
+        coin.mesh.visible = false;
+        return;
+      }
+
+      coin.mesh.visible = true;
+      const bob = Math.sin(this.localCoinTime * 2.6 + coin.phase) * 0.14;
+      coin.mesh.position.y = baseLocalY + bob;
+      coin.mesh.rotation.y = this.localCoinTime * 2.2 + coin.phase;
+      coin.mesh.scale.setScalar(1.0);
+
+      if (canCollect) {
+        const dx = playerPos.x - wx;
+        const dy = playerPos.y - (wy + bob);
+        const dz = playerPos.z - wz;
+        if (dx * dx + dy * dy + dz * dz <= hitDistSq) {
+          coin.collecting = true;
+          coin.collectAge = 0;
+          onCollect();
+          collectedCount++;
+        }
+      }
+    };
+
+    for (const coin of this.cloudCoins) {
+      const c = coin.cloud;
+      if (!c || !c.group.visible) continue;
+
+      const respawnAt = this.cloudCoinRespawnMap.get(coin.id);
+      if (respawnAt !== undefined && this.localCoinTime >= respawnAt) {
+        this.cloudCoinRespawnMap.delete(coin.id);
+      }
+
+      const isAvailable = !this.cloudCoinRespawnMap.has(coin.id);
+      const wx = c.position.x + coin.basePos.x;
+      const wy = c.position.y + coin.basePos.y;
+      const wz = c.position.z + coin.basePos.z;
+      const allowPickup = canCollect && c.visualScale > 0.7;
+
+      processCoin(coin, wx, wy, wz, coin.basePos.y, isAvailable && allowPickup || (isAvailable && !canCollect), () => {
+        this.cloudCoinRespawnMap.set(coin.id, this.localCoinTime + 60.0);
+      });
+    }
+
+    for (const coin of this.sessionCoins) {
+      const isAvailable = !this.collectedSessionCoins.has(coin.id);
+      processCoin(
+        coin,
+        coin.basePos.x,
+        coin.basePos.y,
+        coin.basePos.z,
+        coin.basePos.y,
+        isAvailable,
+        () => {
+          this.collectedSessionCoins.add(coin.id);
+        }
+      );
+    }
+
+    for (const coin of this.bridgeCoins) {
+      const bridgeVisible = !coin.bridge || coin.bridge.mesh.visible;
+      const isAvailable = bridgeVisible && !this.collectedSessionCoins.has(coin.id);
+      processCoin(
+        coin,
+        coin.basePos.x,
+        coin.basePos.y,
+        coin.basePos.z,
+        coin.basePos.y,
+        isAvailable,
+        () => {
+          this.collectedSessionCoins.add(coin.id);
+        }
+      );
+    }
+
+    return collectedCount;
   }
 
   addStructure(structure) {
@@ -201,7 +389,6 @@ class SkyWorld {
 
     ctx.clearRect(0, 0, w, h);
 
-    // 尾端（左）は淡く広がり、先端（右）に向かって細く白い飛行機雲の筋を描く
     const steps = 110;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
@@ -292,7 +479,6 @@ class SkyWorld {
       trailHolder.add(ribbonA);
       trailHolder.add(ribbonB);
 
-      // 先端（+X側）に小さな飛行機のキラッとした点
       const leadMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -336,7 +522,6 @@ class SkyWorld {
         c.baseZ + c.dirZ * offsetAlong
       );
 
-      // 周期の最初と最後だけ自然にフェードさせて途切れをなくす
       const edgeFade = Math.min(1.0, Math.min(t / 0.12, (1.0 - t) / 0.12));
       const op = s.baseOpacity * edgeFade;
       c.mat.opacity = op;
@@ -408,6 +593,12 @@ class SkyWorld {
       const hasA = !br.cloudA || this.clouds.includes(br.cloudA);
       const hasB = !br.cloudB || this.clouds.includes(br.cloudB);
       if (!hasA || !hasB) {
+        for (let bi = this.bridgeCoins.length - 1; bi >= 0; bi--) {
+          if (this.bridgeCoins[bi].bridge === br) {
+            this.scene.remove(this.bridgeCoins[bi].mesh);
+            this.bridgeCoins.splice(bi, 1);
+          }
+        }
         this.scene.remove(br.mesh);
         br.dispose();
         this.bridgeIds.delete(br.id);
@@ -452,14 +643,12 @@ class SkyWorld {
         const shareA = (c1 && (br.cloudA === c1 || br.cloudB === c1));
         const shareB = (c2 && (br.cloudA === c2 || br.cloudB === c2));
 
-        // 同じ島から近い角度（約44度以内）で2本目の橋が出ないようにする
         if (shareA || shareB) {
           const bdx = br.p1.x - br.p0.x;
           const bdz = br.p1.z - br.p0.z;
           const bLen = Math.hypot(bdx, bdz) || 1;
           let bx = bdx / bLen;
           let bz = bdz / bLen;
-          // 共有している島から外向きベクトル同士の角度を比較
           if ((c1 && br.cloudB === c1) || (c2 && br.cloudA === c2)) {
             bx = -bx;
             bz = -bz;
@@ -468,7 +657,6 @@ class SkyWorld {
           if (dot > 0.72) return true;
         }
 
-        // 2D平面上での交差または近接重複判定
         const c1v = cross2D(p0.x, p0.z, p1.x, p1.z, br.p0.x, br.p0.z);
         const c2v = cross2D(p0.x, p0.z, p1.x, p1.z, br.p1.x, br.p1.z);
         const c3v = cross2D(br.p0.x, br.p0.z, br.p1.x, br.p1.z, p0.x, p0.z);
@@ -507,7 +695,6 @@ class SkyWorld {
       const p0 = getCloudAnchor(c1, ux, uz);
       const p1 = getCloudAnchor(c2, -ux, -uz);
 
-      // 構造物や他の島の上を跨ぐ橋を除外
       const midX = (p0.x + p1.x) * 0.5;
       const midZ = (p0.z + p1.z) * 0.5;
       for (const st of this.structures) {
@@ -533,7 +720,6 @@ class SkyWorld {
 
     const structureNearGroups = [];
 
-    // 1パス目：構造物（お城・入道雲）と手前雲島を繋ぐメインの橋を先に確定する
     for (const st of this.structures) {
       if (st.bridgeTargetRadius === null) continue;
 
@@ -596,11 +782,14 @@ class SkyWorld {
           this.scene.add(bridge.mesh);
           this.rainbowBridges.push(bridge);
           this.bridgeIds.add(id);
+
+          if (st.id === 'cumulonimbus') {
+            this._spawnCumulonimbusBridgeCoins(bridge);
+          }
         }
       }
     }
 
-    // 2パス目：雲島同士の橋を距離が短い順に配置し、既存橋との重複・上跨ぎを防ぐ
     const candidatePairs = [];
     for (const nearIslands of structureNearGroups) {
       for (let i = 0; i < nearIslands.length; i++) {
@@ -621,6 +810,7 @@ class SkyWorld {
 
   updateChunks(playerPos, dt, isGuest = false, remoteHeartState = null, remoteStarState = null, partnerPos = null) {
     this.time += dt;
+    this.localCoinTime += dt;
     this.skyDome.position.copy(playerPos);
     this._updateContrails(playerPos);
 
@@ -650,6 +840,12 @@ class SkyWorld {
           this.scene.remove(c.group);
           const idx = this.clouds.indexOf(c);
           if (idx !== -1) this.clouds.splice(idx, 1);
+
+          for (let ci = this.cloudCoins.length - 1; ci >= 0; ci--) {
+            if (this.cloudCoins[ci].cloud === c) {
+              this.cloudCoins.splice(ci, 1);
+            }
+          }
         }
         this.chunks.delete(key);
         chunkChanged = true;
@@ -834,7 +1030,6 @@ class SkyWorld {
       chunkClouds.push(this._createCloud(-14, 1.0, 8, 'normal', 5, 'single_small'));
       chunkClouds.push(this._createCloud(0, 1.6, 16, 'bouncy', 6, false));
 
-      // 既存の雲の間の空きスペースに黄色い雲を配置
       chunkClouds.push(this._createCloud(10, 1.5, -7, 'yellow', 201, false));
       chunkClouds.push(this._createCloud(-15, 1.4, -3.5, 'yellow', 202, false));
       chunkClouds.push(this._createCloud(9.5, 1.5, 15.5, 'yellow', 203, false));
@@ -847,11 +1042,9 @@ class SkyWorld {
       chunkClouds.push(this._createCloud(-14, 1.2, -52, 'island', 80, 'cluster'));
       chunkClouds.push(this._createCloud(18, 2.2, -62, 'moving', 81, false));
 
-      // 既存の雲の間の空きスペースに黄色い雲を配置
       chunkClouds.push(this._createCloud(-2, 1.5, -45, 'yellow', 204, false));
     } else {
       if (gx === 0 && gz === 2) {
-        // 入道雲の手前（z = 108）に虹の橋で繋がる案内用の雲島を確定配置
         chunkClouds.push(this._createCloud(0, 0.8, 108, 'island', 91, false));
       }
 
@@ -889,7 +1082,6 @@ class SkyWorld {
         chunkClouds.push(this._createCloud(wx, ry, wz, type, i + gx * 3 + gz * 7, 'auto'));
       }
 
-      // 既存雲を生成した後で、重ならない隙間に黄色い雲を配置
       for (let j = 0; j < 2; j++) {
         for (let attempt = 0; attempt < 5; attempt++) {
           const seedBase = 300 + j * 20 + attempt * 5;
@@ -948,6 +1140,8 @@ class SkyWorld {
       else if (type === 'normal' && h3 < 0.56) wantsBuilding = true;
     }
 
+    let coinLocalSpot = null;
+
     if (type === 'island') {
       const baseR = 8.4 + h2 * 3.0;
       addPuff(0, 0, 0, baseR, 2.5, baseR, this.materials.island);
@@ -957,11 +1151,7 @@ class SkyWorld {
       addPuff(-baseR * 0.45, -0.3, -baseR * 0.55, baseR * 0.54, 1.8, baseR * 0.54, this.materials.island);
 
       if (!wantsBuilding) {
-        const star = new THREE.Mesh(this.starGeo, this.materials.gold);
-        star.position.set(baseR * 0.38, 3.1, -baseR * 0.28);
-        star.matrixAutoUpdate = false;
-        star.updateMatrix();
-        group.add(star);
+        coinLocalSpot = new THREE.Vector3(baseR * 0.38, 3.1, -baseR * 0.28);
       }
     } else if (type === 'bouncy') {
       const r = 4.2 + h2 * 1.4;
@@ -1029,6 +1219,17 @@ class SkyWorld {
       pulseScale: 1.0,
       visualScale: 0.05
     };
+
+    if (coinLocalSpot) {
+      const coinId = `cloud_coin_${id}`;
+      const coinEntry = this._createCoinEntry(coinId, coinLocalSpot, group, 'cloud', h1 * Math.PI * 2);
+      coinEntry.cloud = cloud;
+      const respawnAt = this.cloudCoinRespawnMap.get(coinId);
+      if (respawnAt !== undefined && this.localCoinTime < respawnAt) {
+        coinEntry.mesh.visible = false;
+      }
+      this.cloudCoins.push(coinEntry);
+    }
 
     if (wantsBuilding && (type === 'island' || type === 'normal')) {
       this.buildingBuilder.attachBuildingsToCloud(cloud, seed + x * 0.37 + z * 0.71, buildingMode);

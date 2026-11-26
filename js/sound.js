@@ -141,6 +141,12 @@ class SoundManager {
     this.playTone(1046.5, 1046.5, 0.28, 'sine', 0.14 * volScale, 0.24);
   }
 
+  playCoin(volScale = 1.0) {
+    this.init();
+    this.playTone(987.77, 987.77, 0.08, 'sine', 0.14 * volScale, 0);
+    this.playTone(1318.51, 1318.51, 0.22, 'sine', 0.15 * volScale, 0.065);
+  }
+
   playClick() {
     this.init();
     this.playTone(620, 740, 0.07, 'triangle', 0.1);

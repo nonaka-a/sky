@@ -27,7 +27,7 @@ class SoundManager {
     if (!this.sliderBgmAudio && typeof Audio !== 'undefined') {
       this.sliderBgmAudio = new Audio('sounds/mini_skySlider_BGM.mp3');
       this.sliderBgmAudio.loop = true;
-      this.sliderBgmAudio.volume = 0.42;
+      this.sliderBgmAudio.volume = 0.26;
     }
     return this.sliderBgmAudio;
   }

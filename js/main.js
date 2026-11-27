@@ -1033,6 +1033,10 @@ class MaimaiGame {
         this.miniSkySlider.formatTime(res.elapsedTime),
         res.justFinished ? true : null
       );
+      if (res.gotSky > 0) {
+        this.addSky(res.gotSky);
+        this.sound.playCoin();
+      }
       if (res.justFinished) {
         this.ui.showToast(`ゴール！ タイム ${this.miniSkySlider.formatTime(res.elapsedTime)}`, 3.5);
       }

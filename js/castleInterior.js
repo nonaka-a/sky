@@ -651,11 +651,11 @@ class CastleInterior {
     const ctx = portalCanvas.getContext('2d');
 
     const grad = ctx.createRadialGradient(128, 128, 10, 128, 128, 124);
-    grad.addColorStop(0.0, 'rgba(255, 252, 224, 0.98)');
-    grad.addColorStop(0.32, 'rgba(255, 225, 130, 0.88)');
-    grad.addColorStop(0.68, 'rgba(130, 152, 255, 0.72)');
-    grad.addColorStop(0.92, 'rgba(90, 110, 230, 0.42)');
-    grad.addColorStop(1.0, 'rgba(90, 110, 230, 0.0)');
+    grad.addColorStop(0.0, 'rgba(255, 250, 232, 0.98)');
+    grad.addColorStop(0.32, 'rgba(245, 205, 255, 0.88)');
+    grad.addColorStop(0.68, 'rgba(164, 108, 255, 0.76)');
+    grad.addColorStop(0.92, 'rgba(116, 62, 224, 0.48)');
+    grad.addColorStop(1.0, 'rgba(116, 62, 224, 0.0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 256, 256);
 
@@ -695,7 +695,7 @@ class CastleInterior {
 
     const innerRing = new THREE.Mesh(
       new THREE.TorusGeometry(1.22, 0.035, 8, 36),
-      new THREE.MeshBasicMaterial({ color: 0xa8b4ff })
+      new THREE.MeshBasicMaterial({ color: 0xc99eff })
     );
     this.flyPortalGroup.add(innerRing);
 

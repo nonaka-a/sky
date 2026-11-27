@@ -112,8 +112,8 @@ class SkyWorld {
       new AngelMob(this.scene, {
         homeType: 'castle',
         castleIsland: this.castleIsland,
-        localX: -2.4,
-        localZ: 6.4
+        localX: -6.4,
+        localZ: 5.8
       })
     );
     for (let i = 0; i < 9; i++) {

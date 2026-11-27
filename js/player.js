@@ -39,6 +39,8 @@ class Player {
     this.wingFlapTimer = 0;
     this.wingAnimTime = 0;
     this.airJumpsLeft = 1; // 2段ジャンプ（羽装備時は5回）
+    this.savedWingJumpsInAir = 5;
+    this.unequippedWingsInAir = false;
     this.isRidingPartner = false; // 仲間の頭に乗っている状態
 
     // リモート補間ターゲット
@@ -170,9 +172,22 @@ class Player {
       this.wingHolder.visible = next;
     }
     if (next) {
-      this.airJumpsLeft = this.isGrounded ? 5 : Math.max(this.airJumpsLeft, 5);
+      if (this.isGrounded) {
+        this.airJumpsLeft = 5;
+        this.savedWingJumpsInAir = 5;
+        this.unequippedWingsInAir = false;
+      } else if (this.unequippedWingsInAir) {
+        // 空中で外して再装備しても、着地するまでは元の残り回数以上に回復しない
+        const usedWhileOff = this.airJumpsLeft === 0 && this.savedWingJumpsInAir > 0 ? 1 : 0;
+        this.airJumpsLeft = Math.max(0, Math.min(5, this.savedWingJumpsInAir - usedWhileOff));
+        this.unequippedWingsInAir = false;
+      }
       this.triggerWingFlap();
     } else {
+      if (!this.isGrounded) {
+        this.savedWingJumpsInAir = this.airJumpsLeft;
+        this.unequippedWingsInAir = true;
+      }
       this.airJumpsLeft = Math.min(this.airJumpsLeft, 1);
     }
   }
@@ -182,6 +197,10 @@ class Player {
   }
 
   _updateWingAnimation(dt) {
+    if (this.isGrounded) {
+      this.savedWingJumpsInAir = this.hasWingsEquipped ? 5 : 1;
+      this.unequippedWingsInAir = false;
+    }
     if (!this.wingHolder) return;
     this.wingHolder.visible = this.hasWingsEquipped;
     if (!this.hasWingsEquipped) return;

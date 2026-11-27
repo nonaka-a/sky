@@ -49,9 +49,9 @@ class ShopIsland extends StructureBase {
     const wallMintMat = new THREE.MeshToonMaterial({ color: 0xb9dccb });
     const plinthMat = new THREE.MeshToonMaterial({ color: 0xb89f8b });
     const floorMat = new THREE.MeshToonMaterial({ color: 0xf4ece4 });
-    const roofBlueMat = new THREE.MeshToonMaterial({ color: 0x52a8f7 });
-    const roofPinkMat = new THREE.MeshToonMaterial({ color: 0xff94bd });
-    const roofMintMat = new THREE.MeshToonMaterial({ color: 0x76e3be });
+    const roofBlueMat = new THREE.MeshToonMaterial({ color: 0x3b9cf0 });
+    const roofPinkMat = new THREE.MeshToonMaterial({ color: 0xf0528c });
+    const roofMintMat = new THREE.MeshToonMaterial({ color: 0x2ec998 });
     const windowMat = new THREE.MeshBasicMaterial({ color: 0x4b6a94 });
     const woodMat = new THREE.MeshToonMaterial({ color: 0x9b6542 });
     const woodTopMat = new THREE.MeshToonMaterial({ color: 0xf7e7d4 });
@@ -123,38 +123,38 @@ class ShopIsland extends StructureBase {
       }
     };
 
-    addOctWing(-4.2, -1.6, 2.25, 3.1, wallPinkMat, roofBlueMat);
-    addOctWing(4.2, -1.6, 2.25, 3.1, wallMintMat, roofPinkMat);
+    addOctWing(-4.2, -1.6, 2.25, 3.7, wallPinkMat, roofBlueMat);
+    addOctWing(4.2, -1.6, 2.25, 3.7, wallMintMat, roofPinkMat);
 
-    // 中央の大きくくり抜かれたショップ本棟
-    addBox(6.8, 3.8, 0.7, 0, y0 + 1.9, -4.25, wallCreamMat);
-    addBox(0.7, 3.8, 5.2, -3.05, y0 + 1.9, -1.4, wallCreamMat);
-    addBox(0.7, 3.8, 5.2, 3.05, y0 + 1.9, -1.4, wallCreamMat);
-    addBox(7.4, 0.5, 5.8, 0, y0 + 4.05, -1.4, wallCreamMat);
+    // 中央の大きくくり抜かれたショップ本棟（壁を少し高くして存在感アップ）
+    addBox(6.8, 4.6, 0.7, 0, y0 + 2.3, -4.25, wallCreamMat);
+    addBox(0.7, 4.6, 5.2, -3.05, y0 + 2.3, -1.4, wallCreamMat);
+    addBox(0.7, 4.6, 5.2, 3.05, y0 + 2.3, -1.4, wallCreamMat);
+    addBox(7.4, 0.5, 5.8, 0, y0 + 4.85, -1.4, wallCreamMat);
 
     // 正面くり抜きアーチ上の梁＋看板飾り
-    addBox(0.65, 3.8, 0.7, -2.75, y0 + 1.9, 1.15, plinthMat);
-    addBox(0.65, 3.8, 0.7, 2.75, y0 + 1.9, 1.15, plinthMat);
-    addBox(6.4, 0.85, 0.82, 0, y0 + 3.45, 1.15, wallCreamMat);
+    addBox(0.65, 4.6, 0.7, -2.75, y0 + 2.3, 1.15, plinthMat);
+    addBox(0.65, 4.6, 0.7, 2.75, y0 + 2.3, 1.15, plinthMat);
+    addBox(6.4, 0.85, 0.82, 0, y0 + 4.25, 1.15, wallCreamMat);
 
-    // 中央屋上の大きなパステルミントのドーム屋根
+    // 中央屋上の大きなドーム屋根
     const mainEave = new THREE.Mesh(octGeo, roofMintMat);
-    mainEave.position.set(0, y0 + 4.38, -1.7);
+    mainEave.position.set(0, y0 + 5.18, -1.7);
     mainEave.scale.set(2.85, 0.26, 2.85);
     this.shopGroup.add(mainEave);
 
     const mainDome = new THREE.Mesh(domeGeo, roofMintMat);
-    mainDome.position.set(0, y0 + 4.48, -1.7);
-    mainDome.scale.set(2.65, 2.25, 2.65);
+    mainDome.position.set(0, y0 + 5.28, -1.7);
+    mainDome.scale.set(2.65, 2.35, 2.65);
     this.shopGroup.add(mainDome);
 
     const topStar = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), goldMat);
-    topStar.position.set(0, y0 + 4.48 + 2.25 + 0.28, -1.7);
+    topStar.position.set(0, y0 + 5.28 + 2.35 + 0.28, -1.7);
     this.shopGroup.add(topStar);
 
     // 看板プレート＆天使のはねシンボル
-    addBox(2.5, 0.68, 0.14, 0, y0 + 3.48, 1.62, roofPinkMat);
-    addBox(2.26, 0.48, 0.16, 0, y0 + 3.48, 1.64, whiteMat);
+    addBox(2.5, 0.68, 0.14, 0, y0 + 4.28, 1.62, roofPinkMat);
+    addBox(2.26, 0.48, 0.16, 0, y0 + 4.28, 1.64, whiteMat);
 
     const signWingShape = new THREE.Shape();
     signWingShape.moveTo(0, 0);
@@ -165,11 +165,11 @@ class ShopIsland extends StructureBase {
     const signWingGeo = new THREE.ExtrudeGeometry(signWingShape, { depth: 0.06, bevelEnabled: false });
 
     const swL = new THREE.Mesh(signWingGeo, goldMat);
-    swL.position.set(-0.08, y0 + 3.48, 1.72);
+    swL.position.set(-0.08, y0 + 4.28, 1.72);
     this.shopGroup.add(swL);
 
     const swR = new THREE.Mesh(signWingGeo, goldMat);
-    swR.position.set(0.08, y0 + 3.48, 1.72);
+    swR.position.set(0.08, y0 + 4.28, 1.72);
     swR.scale.x = -1;
     this.shopGroup.add(swR);
 
@@ -206,16 +206,16 @@ class ShopIsland extends StructureBase {
     this.addBoxCollider(0, 0.14 * s, 4.4 * s, 6.2 * s, 0.28 * s, 1.4 * s);
 
     // 左右8角形ドーム棟
-    this.addCylinderCollider(-4.2 * s, -1.6 * s, y0, y0 + 3.4 * s, 2.22 * s);
-    this.addCylinderCollider(4.2 * s, -1.6 * s, y0, y0 + 3.4 * s, 2.22 * s);
+    this.addCylinderCollider(-4.2 * s, -1.6 * s, y0, y0 + 4.0 * s, 2.22 * s);
+    this.addCylinderCollider(4.2 * s, -1.6 * s, y0, y0 + 4.0 * s, 2.22 * s);
 
     // 奥壁・左右壁・天井・正面柱・カウンター
-    this.addBoxCollider(0, y0 + 1.9 * s, -4.25 * s, 6.8 * s, 3.8 * s, 0.75 * s);
-    this.addBoxCollider(-3.05 * s, y0 + 1.9 * s, -1.4 * s, 0.75 * s, 3.8 * s, 5.2 * s);
-    this.addBoxCollider(3.05 * s, y0 + 1.9 * s, -1.4 * s, 0.75 * s, 3.8 * s, 5.2 * s);
-    this.addBoxCollider(0, y0 + 4.05 * s, -1.4 * s, 7.4 * s, 0.5 * s, 5.8 * s);
-    this.addBoxCollider(-2.75 * s, y0 + 1.9 * s, 1.15 * s, 0.68 * s, 3.8 * s, 0.72 * s);
-    this.addBoxCollider(2.75 * s, y0 + 1.9 * s, 1.15 * s, 0.68 * s, 3.8 * s, 0.72 * s);
+    this.addBoxCollider(0, y0 + 2.3 * s, -4.25 * s, 6.8 * s, 4.6 * s, 0.75 * s);
+    this.addBoxCollider(-3.05 * s, y0 + 2.3 * s, -1.4 * s, 0.75 * s, 4.6 * s, 5.2 * s);
+    this.addBoxCollider(3.05 * s, y0 + 2.3 * s, -1.4 * s, 0.75 * s, 4.6 * s, 5.2 * s);
+    this.addBoxCollider(0, y0 + 4.85 * s, -1.4 * s, 7.4 * s, 0.5 * s, 5.8 * s);
+    this.addBoxCollider(-2.75 * s, y0 + 2.3 * s, 1.15 * s, 0.68 * s, 4.6 * s, 0.72 * s);
+    this.addBoxCollider(2.75 * s, y0 + 2.3 * s, 1.15 * s, 0.68 * s, 4.6 * s, 0.72 * s);
     this.addBoxCollider(0, y0 + 0.55 * s, -1.1 * s, 4.85 * s, 1.1 * s, 1.02 * s);
   }
 

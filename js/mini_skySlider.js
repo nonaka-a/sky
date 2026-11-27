@@ -6,6 +6,7 @@ class MiniSkySlider {
     this.nodes = [];
     this.obstacleSpecs = [];
     this.obstacleClouds = [];
+    this.skyCoins = [];
     this.goalCloudCenter = new THREE.Vector3();
     this.goalCloudRadius = 14.5;
     this.goalForward = new THREE.Vector3(0, 0, -1);
@@ -792,6 +793,49 @@ class MiniSkySlider {
         hitAnim: 0
       });
     }
+
+    this._buildCourseCoins();
+  }
+
+  _buildCourseCoins() {
+    const coinGeo = new THREE.OctahedronGeometry(0.62, 0);
+    coinGeo.scale(0.92, 1.12, 0.55);
+    const coinMat = new THREE.MeshToonMaterial({ color: 0xffd84d, emissive: 0x422d00 });
+
+    let seed = 2026;
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+
+    let s = 34;
+    while (s < this.goalS - 22) {
+      const sample = this.sampleAtS(s);
+      if (sample && sample.style !== 'gap' && !sample.isLoop) {
+        let u = (rand() * 2 - 1) * (sample.halfWidth * 0.72);
+        // 障害物雲と近すぎる場合は少しずらす
+        for (const obs of this.obstacleSpecs) {
+          if (Math.abs(obs.s - s) < 4.5 && Math.abs(obs.u - u) < 1.2) {
+            u = obs.u >= 0 ? -sample.halfWidth * 0.6 : sample.halfWidth * 0.6;
+          }
+        }
+        const basePos = sample.pos
+          .clone()
+          .addScaledVector(sample.B, u)
+          .addScaledVector(sample.N, 1.05);
+        const mesh = new THREE.Mesh(coinGeo, coinMat);
+        mesh.position.copy(basePos);
+        this.scene.add(mesh);
+        this.skyCoins.push({
+          mesh,
+          basePos,
+          normal: sample.N.clone(),
+          phase: rand() * Math.PI * 2,
+          collected: false
+        });
+      }
+      s += 38 + rand() * 26;
+    }
   }
 
   _buildStarParticles() {
@@ -1256,6 +1300,10 @@ class MiniSkySlider {
       obs.hitAnim = 0;
       obs.puffWrap.scale.set(1, 1, 1);
     }
+    for (const sc of this.skyCoins) {
+      sc.collected = false;
+      sc.mesh.visible = true;
+    }
 
     const sample = this.sampleAtS(this.trackS);
     const startPos = sample.pos
@@ -1467,6 +1515,7 @@ class MiniSkySlider {
     let courseOut = false;
     let justFinished = false;
     let enteredGoalPortal = false;
+    let gotSky = 0;
 
     if (this.runState === 'intro_fall') {
       const sample = this.sampleAtS(this.trackS);
@@ -1858,6 +1907,22 @@ class MiniSkySlider {
       }
     }
 
+    // コース上のスカイ回転＆取得判定
+    const canCollectCoin = this.runState === 'sliding' || this.runState === 'gap_air';
+    const coinHitR = player.radius + 1.05;
+    for (const sc of this.skyCoins) {
+      if (sc.collected) continue;
+      sc.mesh.rotation.y = this.time * 2.4 + sc.phase;
+      const bob = Math.sin(this.time * 2.6 + sc.phase) * 0.2;
+      sc.mesh.position.copy(sc.basePos).addScaledVector(sc.normal, bob);
+      if (canCollectCoin && sc.mesh.position.distanceToSquared(player.position) <= coinHitR * coinHitR) {
+        sc.collected = true;
+        sc.mesh.visible = false;
+        gotSky += 1;
+        player.setExpression('happy', 0.45);
+      }
+    }
+
     this.skyDome.position.copy(player.position);
 
     const shadowInfo = this.getShadowGroundInfo(player.position.x, player.position.y, player.position.z);
@@ -1867,6 +1932,7 @@ class MiniSkySlider {
       courseOut,
       justFinished,
       enteredGoalPortal,
+      gotSky,
       elapsedTime: this.elapsedTime,
       timerStarted: this.timerStarted,
       timerFinished: this.timerFinished

@@ -4,6 +4,18 @@ class SoundManager {
     this.enabled = true;
     this.isPlayingBgm = false;
     this.bgmMode = 'default';
+
+    this.bgmDefs = {
+      default: { url: 'sounds/BGM.mp3', volume: 0.42 },
+      mini_skySlider: { url: 'sounds/mini_skySlider_BGM.mp3', volume: 0.26 },
+      mini_flyContest: { url: 'sounds/mini_fly_BGM.mp3', volume: 0.42 }
+    };
+    this.bgmBuffers = {};
+    this.bgmLoadPromises = {};
+    this.bgmPlayToken = 0;
+    this.currentBgmSource = null;
+    this.currentBgmGain = null;
+
     this.defaultBgmAudio = null;
     this.sliderBgmAudio = null;
     this.flyBgmAudio = null;
@@ -41,6 +53,118 @@ class SoundManager {
     return this.flyBgmAudio;
   }
 
+  _loadBgmBuffer(mode) {
+    if (this.bgmBuffers[mode]) {
+      return Promise.resolve(this.bgmBuffers[mode]);
+    }
+    if (this.bgmLoadPromises[mode]) {
+      return this.bgmLoadPromises[mode];
+    }
+    const def = this.bgmDefs[mode];
+    if (!def || !this.ctx || typeof fetch !== 'function') {
+      return Promise.resolve(null);
+    }
+
+    const p = fetch(def.url)
+      .then((res) => {
+        if (!res.ok) throw new Error('BGM fetch failed');
+        return res.arrayBuffer();
+      })
+      .then((arrBuf) => {
+        return new Promise((resolve, reject) => {
+          const decoded = this.ctx.decodeAudioData(
+            arrBuf,
+            (buf) => resolve(buf),
+            (err) => reject(err)
+          );
+          if (decoded && typeof decoded.then === 'function') {
+            decoded.then(resolve).catch(reject);
+          }
+        });
+      })
+      .then((audioBuf) => {
+        this.bgmBuffers[mode] = audioBuf;
+        return audioBuf;
+      })
+      .catch(() => null);
+
+    this.bgmLoadPromises[mode] = p;
+    return p;
+  }
+
+  _preloadAllBgm() {
+    this._loadBgmBuffer('default');
+    this._loadBgmBuffer('mini_skySlider');
+    this._loadBgmBuffer('mini_flyContest');
+  }
+
+  _stopCurrentWebAudioBgm() {
+    if (this.currentBgmSource) {
+      try {
+        this.currentBgmSource.stop();
+      } catch (e) {}
+      try {
+        this.currentBgmSource.disconnect();
+      } catch (e) {}
+      this.currentBgmSource = null;
+    }
+    if (this.currentBgmGain) {
+      try {
+        this.currentBgmGain.disconnect();
+      } catch (e) {}
+      this.currentBgmGain = null;
+    }
+  }
+
+  _playWebAudioBgmBuffer(mode, buffer) {
+    if (!this.ctx || !buffer || !this.enabled || !this.isPlayingBgm || this.bgmMode !== mode) {
+      return;
+    }
+    if (this.ctx.state !== 'running') {
+      this.ctx.resume().catch(() => {});
+    }
+
+    this._stopCurrentWebAudioBgm();
+
+    const def = this.bgmDefs[mode];
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(def ? def.volume : 0.4, this.ctx.currentTime);
+
+    source.connect(gain);
+    gain.connect(this.ctx.destination);
+    source.start(0);
+
+    this.currentBgmSource = source;
+    this.currentBgmGain = gain;
+  }
+
+  _startFallbackAudioElement(mode) {
+    if (mode === 'mini_skySlider') {
+      const audio = this._ensureSliderBgm();
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+      return;
+    }
+    if (mode === 'mini_flyContest') {
+      const audio = this._ensureFlyBgm();
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+      return;
+    }
+    const defaultAudio = this._ensureDefaultBgm();
+    if (defaultAudio && defaultAudio.paused) {
+      defaultAudio.play().catch(() => {});
+    }
+  }
+
   setBgmMode(mode) {
     const nextMode =
       mode === 'mini_skySlider'
@@ -63,7 +187,7 @@ class SoundManager {
         this.ctx = new AudioCtx();
       }
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state !== 'running') {
       this.ctx.resume().catch(() => {});
     }
   }
@@ -80,7 +204,7 @@ class SoundManager {
 
   playTone(freq, endFreq, duration, type = 'sine', volume = 0.15, delay = 0) {
     if (!this.enabled || !this.ctx || volume <= 0.001) return;
-    if (this.ctx.state === 'suspended') {
+    if (this.ctx.state !== 'running') {
       this.ctx.resume().catch(() => {});
     }
 
@@ -238,57 +362,40 @@ class SoundManager {
     this.init();
     this.isPlayingBgm = true;
 
-    if (this.bgmMode === 'mini_skySlider') {
-      if (this.defaultBgmAudio) {
-        this.defaultBgmAudio.pause();
-        this.defaultBgmAudio.currentTime = 0;
+    const mode = this.bgmMode;
+    const token = ++this.bgmPlayToken;
+
+    this._preloadAllBgm();
+
+    if (this.ctx && typeof fetch === 'function') {
+      if (this.bgmBuffers[mode]) {
+        if (!this.currentBgmSource) {
+          this._playWebAudioBgmBuffer(mode, this.bgmBuffers[mode]);
+        }
+        return;
       }
-      if (this.flyBgmAudio) {
-        this.flyBgmAudio.pause();
-        this.flyBgmAudio.currentTime = 0;
-      }
-      const audio = this._ensureSliderBgm();
-      if (audio) {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-      }
+
+      this._loadBgmBuffer(mode).then((buf) => {
+        if (token !== this.bgmPlayToken || !this.isPlayingBgm || !this.enabled || this.bgmMode !== mode) {
+          return;
+        }
+        if (buf) {
+          this._playWebAudioBgmBuffer(mode, buf);
+        } else {
+          this._startFallbackAudioElement(mode);
+        }
+      });
       return;
     }
 
-    if (this.bgmMode === 'mini_flyContest') {
-      if (this.defaultBgmAudio) {
-        this.defaultBgmAudio.pause();
-        this.defaultBgmAudio.currentTime = 0;
-      }
-      if (this.sliderBgmAudio) {
-        this.sliderBgmAudio.pause();
-        this.sliderBgmAudio.currentTime = 0;
-      }
-      const audio = this._ensureFlyBgm();
-      if (audio) {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-      }
-      return;
-    }
-
-    if (this.sliderBgmAudio) {
-      this.sliderBgmAudio.pause();
-      this.sliderBgmAudio.currentTime = 0;
-    }
-    if (this.flyBgmAudio) {
-      this.flyBgmAudio.pause();
-      this.flyBgmAudio.currentTime = 0;
-    }
-
-    const defaultAudio = this._ensureDefaultBgm();
-    if (defaultAudio && defaultAudio.paused) {
-      defaultAudio.play().catch(() => {});
-    }
+    this._startFallbackAudioElement(mode);
   }
 
   stopBgm() {
     this.isPlayingBgm = false;
+    this.bgmPlayToken++;
+    this._stopCurrentWebAudioBgm();
+
     if (this.defaultBgmAudio) {
       this.defaultBgmAudio.pause();
       this.defaultBgmAudio.currentTime = 0;

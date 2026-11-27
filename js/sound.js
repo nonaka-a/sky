@@ -180,6 +180,25 @@ class SoundManager {
     this.playTone(540, 960, 0.14, 'triangle', 0.07 * volScale, 0.03);
   }
 
+  playGummyChargeMax(volScale = 1.0) {
+    this.init();
+    this.playTone(880, 1174.66, 0.1, 'triangle', 0.12 * volScale, 0);
+    this.playTone(1318.51, 1760, 0.2, 'sine', 0.14 * volScale, 0.05);
+  }
+
+  playGummyJump(isMax = false, volScale = 1.0) {
+    this.init();
+    if (isMax) {
+      this.playTone(260, 1080, 0.28, 'sine', 0.19 * volScale, 0);
+      this.playTone(440, 1320, 0.24, 'triangle', 0.13 * volScale, 0.02);
+      this.playTone(659.25, 1567.98, 0.22, 'sine', 0.11 * volScale, 0.06);
+      this.playTone(1046.5, 2093, 0.24, 'triangle', 0.09 * volScale, 0.1);
+    } else {
+      this.playTone(280, 820, 0.22, 'sine', 0.17 * volScale, 0);
+      this.playTone(420, 980, 0.18, 'triangle', 0.1 * volScale, 0.03);
+    }
+  }
+
   playClick() {
     this.init();
     this.playTone(620, 740, 0.07, 'triangle', 0.1);

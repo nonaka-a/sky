@@ -3,6 +3,9 @@ class ControlsManager {
     this.moveInput = new THREE.Vector2(0, 0);
     this.cameraDelta = new THREE.Vector2(0, 0);
     this.jumpRequested = false;
+    this.jumpReleased = false;
+    this.jumpPointerId = null;
+    this.jumpKeyHeld = false;
 
     // フローティングジョイスティック状態
     this.joyPointerId = null;
@@ -122,16 +125,28 @@ class ControlsManager {
     this.btnJump.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (this.jumpPointerId !== null) return;
+      try {
+        this.btnJump.setPointerCapture(e.pointerId);
+      } catch (err) {}
+      this.jumpPointerId = e.pointerId;
       this.jumpRequested = true;
+      this.jumpReleased = false;
       this.btnJump.classList.add('pressed');
     });
 
-    const releaseJump = () => {
+    const releaseJump = (e) => {
+      if (e && typeof e.pointerId === 'number' && this.jumpPointerId !== null && e.pointerId !== this.jumpPointerId) {
+        return;
+      }
+      if (this.jumpPointerId !== null) {
+        this.jumpPointerId = null;
+        this.jumpReleased = true;
+      }
       this.btnJump.classList.remove('pressed');
     };
     this.btnJump.addEventListener('pointerup', releaseJump);
     this.btnJump.addEventListener('pointercancel', releaseJump);
-    this.btnJump.addEventListener('pointerleave', releaseJump);
 
     // PCキーボード併用（フォーカス中のボタンへのSpace誤作動を防止）
     window.addEventListener('keydown', (e) => {
@@ -152,11 +167,17 @@ class ControlsManager {
 
       if (e.code === 'Space' && !this.keys[e.code]) {
         this.jumpRequested = true;
+        this.jumpKeyHeld = true;
+        this.jumpReleased = false;
       }
       this.keys[e.code] = true;
     });
 
     window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space' && this.jumpKeyHeld) {
+        this.jumpKeyHeld = false;
+        this.jumpReleased = true;
+      }
       this.keys[e.code] = false;
     });
   }
@@ -181,10 +202,20 @@ class ControlsManager {
     return { x, y };
   }
 
+  isJumpHolding() {
+    return this.jumpPointerId !== null || this.jumpKeyHeld;
+  }
+
   consumeJump() {
     const req = this.jumpRequested;
     this.jumpRequested = false;
     return req;
+  }
+
+  consumeJumpRelease() {
+    const rel = this.jumpReleased;
+    this.jumpReleased = false;
+    return rel;
   }
 
   consumeCameraDelta() {
@@ -196,10 +227,14 @@ class ControlsManager {
   reset() {
     this.joyPointerId = null;
     this.camPointerId = null;
+    this.jumpPointerId = null;
+    this.jumpKeyHeld = false;
     this.joyBase.classList.add('hidden');
+    this.btnJump.classList.remove('pressed');
     this.moveInput.set(0, 0);
     this.cameraDelta.set(0, 0);
     this.jumpRequested = false;
+    this.jumpReleased = false;
     this.keys = {};
   }
 }

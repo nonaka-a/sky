@@ -22,12 +22,73 @@ class PhysicsSystem {
     this.rideCooldown = val;
   }
 
-  stepMovement(player, move, inputMag, camYaw, dt, sound, sendSeFn, applyCloudCarry = false) {
+  stepMovement(player, move, inputMag, camYaw, dt, sound, sendSeFn, applyCloudCarry = false, gummyOpts = null) {
     if (applyCloudCarry && player.isGrounded && player.groundCloud) {
       player.position.add(player.groundCloud.deltaPos);
     }
 
     const hasWings = !!player.hasWingsEquipped;
+    const gummyEnabled = !!(gummyOpts && gummyOpts.enabled);
+    const isJumpHolding = !!(gummyOpts && gummyOpts.isJumpHolding);
+    const jumpReleased = !!(gummyOpts && gummyOpts.jumpReleased);
+
+    if (player.isGrounded) {
+      player.coyoteTimer = 0.12;
+    } else if (player.coyoteTimer > 0) {
+      player.coyoteTimer -= dt;
+    }
+
+    let didDoubleJump = false;
+    let superJumpType = null;
+
+    // スーパーボールグミ：タメ中の処理（1.0秒押しっぱなしで着地後にタメ開始）
+    if (gummyEnabled) {
+      if (player.isChargingJump) {
+        if (!player.isGrounded) {
+          // 地面から離れた場合はタメ解除（通常落下）
+          player.clearJumpCharge();
+          player.jumpBufferTimer = 0;
+        } else if (jumpReleased || !isJumpHolding) {
+          // タメを離した瞬間に大ジャンプ発動
+          const baseVy = hasWings ? 13.8 : 14.5;
+          const chargeRatio = THREE.MathUtils.clamp(player.chargeTimer / 3.0, 0, 1);
+          const isMax = player.chargeTimer >= 3.0;
+          const maxVy = hasWings ? 34.0 : 42.0;
+
+          player.velocity.y = THREE.MathUtils.lerp(baseVy + 3.0, maxVy, chargeRatio);
+          player.isGrounded = false;
+          player.groundCloud = null;
+          player.airJumpsLeft = player.getMaxAirJumps();
+          player.jumpBufferTimer = 0;
+          player.coyoteTimer = 0;
+          player.triggerSquash(isMax ? 1.72 : 1.52);
+          player.setExpression('happy', isMax ? 1.1 : 0.7);
+          player.spawnSuperJumpEffect(isMax);
+          if (hasWings) {
+            player.triggerWingFlap();
+          }
+          sound.playGummyJump(isMax);
+          sendSeFn(isMax ? 'gummy_max' : 'gummy_jump');
+          superJumpType = isMax ? 'max' : 'charge';
+
+          player.clearJumpCharge();
+        } else {
+          // タメ継続中（3.0秒でMAX）
+          player.chargeTimer = Math.min(3.0, player.chargeTimer + dt);
+          player.chargeRatio = player.chargeTimer / 3.0;
+          if (player.chargeTimer >= 3.0 && !player.chargeMaxAnnounced) {
+            player.chargeMaxAnnounced = true;
+            sound.playGummyChargeMax();
+            sendSeFn('gummy_ready');
+          }
+        }
+      }
+    } else if (player.isChargingJump || player.jumpPreHoldTimer > 0) {
+      player.clearJumpCharge();
+    }
+
+    // 水平移動（グミのタメ開始後のみ移動不可）
+    const moveLocked = gummyEnabled && player.isChargingJump;
     const forward = this._tmpForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw));
     const right = this._tmpRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
 
@@ -38,7 +99,7 @@ class PhysicsSystem {
 
     const maxSpeed = 10.5;
 
-    if (inputMag > 0.05 && wishDir.lengthSq() > 0.0001) {
+    if (!moveLocked && inputMag > 0.05 && wishDir.lengthSq() > 0.0001) {
       wishDir.normalize();
       const targetVx = wishDir.x * maxSpeed * inputMag;
       const targetVz = wishDir.z * maxSpeed * inputMag;
@@ -47,7 +108,7 @@ class PhysicsSystem {
       player.velocity.x = THREE.MathUtils.lerp(player.velocity.x, targetVx, alpha);
       player.velocity.z = THREE.MathUtils.lerp(player.velocity.z, targetVz, alpha);
     } else {
-      const stopRate = player.isGrounded ? 22.0 : 4.0;
+      const stopRate = moveLocked ? 28.0 : (player.isGrounded ? 22.0 : 4.0);
       const decay = Math.exp(-stopRate * dt);
       player.velocity.x *= decay;
       player.velocity.z *= decay;
@@ -57,15 +118,8 @@ class PhysicsSystem {
       }
     }
 
-    if (player.isGrounded) {
-      player.coyoteTimer = 0.12;
-    } else if (player.coyoteTimer > 0) {
-      player.coyoteTimer -= dt;
-    }
-
-    let didDoubleJump = false;
-
-    if (player.jumpBufferTimer > 0) {
+    // 通常ジャンプ＆空中ジャンプ（押した瞬間に即発動）
+    if (!player.isChargingJump && player.jumpBufferTimer > 0) {
       if (player.coyoteTimer > 0) {
         player.velocity.y = hasWings ? 13.8 : 14.5;
         player.isGrounded = false;
@@ -100,6 +154,22 @@ class PhysicsSystem {
       }
     }
 
+    // 押しっぱなし時間計測（地上着地状態で1.0秒以上押し続けていたらタメ開始）
+    if (gummyEnabled && !player.isChargingJump) {
+      if (isJumpHolding && !jumpReleased) {
+        player.jumpPreHoldTimer += dt;
+        if (player.isGrounded && player.jumpPreHoldTimer >= 1.0) {
+          player.jumpPreHoldTimer = 0;
+          player.isChargingJump = true;
+          player.chargeTimer = 0;
+          player.chargeRatio = 0;
+          player.chargeMaxAnnounced = false;
+        }
+      } else {
+        player.jumpPreHoldTimer = 0;
+      }
+    }
+
     let gravity = 32.0;
     let maxFall = -28;
     if (hasWings) {
@@ -112,7 +182,7 @@ class PhysicsSystem {
 
     player.position.addScaledVector(player.velocity, dt);
 
-    return didDoubleJump;
+    return { didDoubleJump, superJumpType };
   }
 
   resolveWorldCollisions(player, world, sound, sendSeFn, wasGrounded) {
@@ -212,6 +282,7 @@ class PhysicsSystem {
 
           if (ny > 0.45) {
             if (cloud.type === 'bouncy') {
+              player.clearJumpCharge();
               player.velocity.y = 22.0;
               player.isGrounded = false;
               player.airJumpsLeft = player.getMaxAirJumps();
@@ -292,6 +363,7 @@ class PhysicsSystem {
       const penetration = minDist - dist;
 
       if (this.rideCooldown <= 0 && ny > 0.45 && player.velocity.y <= 2.0 && p.y > rp.y + 0.25) {
+        player.clearJumpCharge();
         player.isRidingPartner = true;
         p.set(rp.x, rp.y + minDist - 0.04, rp.z);
         player.velocity.set(0, 0, 0);

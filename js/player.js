@@ -23,6 +23,12 @@ class Player {
     return wingGeo;
   }
 
+  static _getSharedStarGeo() {
+    if (Player._starGeo) return Player._starGeo;
+    Player._starGeo = new THREE.OctahedronGeometry(0.18, 0);
+    return Player._starGeo;
+  }
+
   constructor(scene, options = {}) {
     this.scene = scene;
     this.radius = 0.6;
@@ -42,6 +48,15 @@ class Player {
     this.savedWingJumpsInAir = 5;
     this.unequippedWingsInAir = false;
     this.isRidingPartner = false; // 仲間の頭に乗っている状態
+
+    // スーパーボールグミ タメ状態管理
+    this.jumpPreHoldTimer = 0;
+    this.isChargingJump = false;
+    this.chargeTimer = 0;
+    this.chargeRatio = 0;
+    this.chargeMaxAnnounced = false;
+    this.chargeShakeTime = 0;
+    this.chargeSparkTimer = 0;
 
     // リモート補間ターゲット
     this.remoteTargetPos = new THREE.Vector3(0, 4, 0);
@@ -76,8 +91,9 @@ class Player {
     this.isBlinking = false;
     this.chatText = '';
 
-    // 2段ジャンプエフェクト用リング管理
+    // エフェクト用リング＆パーティクル管理
     this.jumpRings = [];
+    this.chargeParticles = [];
 
     this.group = new THREE.Group();
     this.bodyPivot = new THREE.Group();
@@ -117,6 +133,7 @@ class Player {
     this.bodyPivot.add(this.outlineMesh);
 
     this._createWings();
+    this._createChargeAura();
 
     const shadowGeo = new THREE.CircleGeometry(this.radius * 0.95, 24);
     const shadowMat = new THREE.MeshBasicMaterial({
@@ -158,6 +175,34 @@ class Player {
     rightWingOut.scale.set(1.08, 1.08, 1.28);
     this.rightWingPivot.add(rightWingOut);
     this.wingHolder.add(this.rightWingPivot);
+  }
+
+  _createChargeAura() {
+    const innerGeo = new THREE.RingGeometry(0.46, 0.84, 30);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0xff3355,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false
+    });
+    this.chargeAuraMesh = new THREE.Mesh(innerGeo, innerMat);
+    this.chargeAuraMesh.rotation.x = -Math.PI / 2;
+    this.chargeAuraMesh.visible = false;
+    this.group.add(this.chargeAuraMesh);
+
+    const outerGeo = new THREE.RingGeometry(0.88, 1.18, 30);
+    const outerMat = new THREE.MeshBasicMaterial({
+      color: 0xff708d,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.65,
+      depthWrite: false
+    });
+    this.chargeAuraOuterMesh = new THREE.Mesh(outerGeo, outerMat);
+    this.chargeAuraOuterMesh.rotation.x = -Math.PI / 2;
+    this.chargeAuraOuterMesh.visible = false;
+    this.group.add(this.chargeAuraOuterMesh);
   }
 
   getMaxAirJumps() {
@@ -367,6 +412,24 @@ class Player {
     this.squashVel = 0;
   }
 
+  clearJumpCharge() {
+    this.jumpPreHoldTimer = 0;
+    this.isChargingJump = false;
+    this.chargeTimer = 0;
+    this.chargeRatio = 0;
+    this.chargeMaxAnnounced = false;
+    this.chargeSparkTimer = 0;
+    if (this.bodyPivot) {
+      this.bodyPivot.position.set(0, 0, 0);
+    }
+    if (this.chargeAuraMesh) {
+      this.chargeAuraMesh.visible = false;
+    }
+    if (this.chargeAuraOuterMesh) {
+      this.chargeAuraOuterMesh.visible = false;
+    }
+  }
+
   spawnDoubleJumpRing() {
     const geo = new THREE.RingGeometry(0.28, 0.56, 24);
     const mat = new THREE.MeshBasicMaterial({
@@ -384,8 +447,129 @@ class Player {
     this.jumpRings.push({
       mesh,
       age: 0,
-      life: 0.36
+      life: 0.36,
+      maxGrow: 1.9,
+      riseSpeed: 0
     });
+  }
+
+  spawnSuperJumpEffect(isMax = false) {
+    const baseY = this.position.y - this.radius * 0.72;
+    const ringConfigs = isMax
+      ? [
+          { inner: 0.40, outer: 0.86, color: 0xff1f4b, life: 0.68, grow: 5.4, rise: 1.0 },
+          { inner: 0.34, outer: 0.70, color: 0xff5470, life: 0.60, grow: 4.3, rise: 2.8 },
+          { inner: 0.28, outer: 0.60, color: 0xff859d, life: 0.54, grow: 3.4, rise: 4.8 },
+          { inner: 0.24, outer: 0.50, color: 0xffb3c1, life: 0.48, grow: 2.6, rise: 6.8 },
+          { inner: 0.22, outer: 0.44, color: 0xffffff, life: 0.42, grow: 2.0, rise: 8.6 }
+        ]
+      : [
+          { inner: 0.34, outer: 0.68, color: 0xff3b5c, life: 0.48, grow: 3.4, rise: 0.8 },
+          { inner: 0.26, outer: 0.54, color: 0xff758f, life: 0.42, grow: 2.5, rise: 2.0 },
+          { inner: 0.20, outer: 0.42, color: 0xffccd5, life: 0.36, grow: 1.8, rise: 3.2 }
+        ];
+
+    for (const cfg of ringConfigs) {
+      const geo = new THREE.RingGeometry(cfg.inner, cfg.outer, 30);
+      const mat = new THREE.MeshBasicMaterial({
+        color: cfg.color,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(this.position.x, baseY, this.position.z);
+      this.scene.add(mesh);
+      this.jumpRings.push({
+        mesh,
+        age: 0,
+        life: cfg.life,
+        maxGrow: cfg.grow,
+        riseSpeed: cfg.rise
+      });
+    }
+
+    const starGeo = Player._getSharedStarGeo();
+    const palette = isMax
+      ? [0xff1e42, 0xff4769, 0xff708d, 0xff9eb3, 0xffd1d9, 0xffffff]
+      : [0xff3355, 0xff6b85, 0xffa6b8, 0xffffff];
+    const count = isMax ? 34 : 14;
+
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: palette[i % palette.length],
+        transparent: true,
+        opacity: 0.98
+      });
+      const mesh = new THREE.Mesh(starGeo, mat);
+      const ang = (i / count) * Math.PI * 2 + Math.random() * 0.35;
+      const isFountain = isMax && i % 2 === 1;
+      const horizSpeed = isMax
+        ? (isFountain ? (1.8 + Math.random() * 3.4) : (5.2 + Math.random() * 5.2))
+        : (3.2 + Math.random() * 2.8);
+      const upSpeed = isMax
+        ? (isFountain ? (9.5 + Math.random() * 8.5) : (3.8 + Math.random() * 6.0))
+        : (2.4 + Math.random() * 3.8);
+      const startScale = isMax ? (1.05 + Math.random() * 0.9) : (0.75 + Math.random() * 0.5);
+
+      mesh.position.set(
+        this.position.x + Math.cos(ang) * 0.35,
+        baseY + 0.15,
+        this.position.z + Math.sin(ang) * 0.35
+      );
+      mesh.scale.setScalar(startScale);
+      this.scene.add(mesh);
+
+      this.chargeParticles.push({
+        mesh,
+        vel: new THREE.Vector3(Math.cos(ang) * horizSpeed, upSpeed, Math.sin(ang) * horizSpeed),
+        rotVel: (Math.random() - 0.5) * 16,
+        age: 0,
+        life: isMax ? (0.68 + Math.random() * 0.32) : (0.44 + Math.random() * 0.2),
+        startScale
+      });
+    }
+  }
+
+  _spawnChargeSpark(isMax) {
+    const starGeo = Player._getSharedStarGeo();
+    const redPalette = [0xff1e42, 0xff4769, 0xff758f, 0xffb3c1];
+    const spawnCount = isMax ? 3 : 2;
+
+    for (let i = 0; i < spawnCount; i++) {
+      const color = redPalette[Math.floor(Math.random() * redPalette.length)];
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.95
+      });
+      const mesh = new THREE.Mesh(starGeo, mat);
+      const ang = Math.random() * Math.PI * 2;
+      const rDist = isMax ? (0.55 + Math.random() * 0.95) : (0.55 + Math.random() * 0.65);
+      mesh.position.set(
+        this.position.x + Math.cos(ang) * rDist,
+        this.position.y - this.radius * 0.42,
+        this.position.z + Math.sin(ang) * rDist
+      );
+      const startScale = isMax ? (0.78 + Math.random() * 0.45) : (0.52 + Math.random() * 0.32);
+      mesh.scale.setScalar(startScale);
+      this.scene.add(mesh);
+
+      this.chargeParticles.push({
+        mesh,
+        vel: new THREE.Vector3(
+          -Math.cos(ang) * (isMax ? 0.5 : 0.9),
+          isMax ? (3.8 + Math.random() * 2.8) : (2.4 + Math.random() * 1.8),
+          -Math.sin(ang) * (isMax ? 0.5 : 0.9)
+        ),
+        rotVel: (Math.random() - 0.5) * 12,
+        age: 0,
+        life: isMax ? 0.46 : 0.38,
+        startScale
+      });
+    }
   }
 
   resetTo(pos) {
@@ -395,6 +579,7 @@ class Player {
     this.isGrounded = false;
     this.groundCloud = null;
     this.isRidingPartner = false;
+    this.clearJumpCharge();
     this.airJumpsLeft = this.getMaxAirJumps();
     this.rollQuat.setFromAxisAngle(this._tmpAxisY, this.facingYaw);
     this.remoteTargetQuat.copy(this.rollQuat);
@@ -402,7 +587,7 @@ class Player {
     this.setExpression('happy', 0.6);
   }
 
-  _updateRingsAndBlink(dt) {
+  _updateEffectsAndBlink(dt) {
     for (let i = this.jumpRings.length - 1; i >= 0; i--) {
       const ring = this.jumpRings[i];
       ring.age += dt;
@@ -413,9 +598,31 @@ class Player {
         ring.mesh.material.dispose();
         this.jumpRings.splice(i, 1);
       } else {
-        const s = 1 + t * 1.9;
+        const s = 1 + t * (ring.maxGrow || 1.9);
         ring.mesh.scale.set(s, s, 1);
-        ring.mesh.material.opacity = 0.85 * (1 - t);
+        if (ring.riseSpeed) {
+          ring.mesh.position.y += ring.riseSpeed * dt;
+        }
+        ring.mesh.material.opacity = 0.9 * (1 - t);
+      }
+    }
+
+    for (let i = this.chargeParticles.length - 1; i >= 0; i--) {
+      const p = this.chargeParticles[i];
+      p.age += dt;
+      const t = p.age / p.life;
+      if (t >= 1) {
+        this.scene.remove(p.mesh);
+        p.mesh.material.dispose();
+        this.chargeParticles.splice(i, 1);
+      } else {
+        p.mesh.position.addScaledVector(p.vel, dt);
+        p.vel.y -= 6.5 * dt;
+        p.mesh.rotation.y += p.rotVel * dt;
+        p.mesh.rotation.x += p.rotVel * 0.6 * dt;
+        const sc = p.startScale * (1 - t * 0.72);
+        p.mesh.scale.setScalar(Math.max(0.02, sc));
+        p.mesh.material.opacity = 0.96 * (1 - t);
       }
     }
 
@@ -453,34 +660,93 @@ class Player {
   }
 
   updateVisuals(dt, shadowInfo = null) {
-    this._updateRingsAndBlink(dt);
+    this._updateEffectsAndBlink(dt);
 
-    if (this.exprTimer > 0) {
-      this.exprTimer -= dt;
-      if (this.exprTimer <= 0) {
+    if (this.isChargingJump) {
+      this.chargeShakeTime += dt;
+      this.setExpression('land');
+
+      const targetSquash = THREE.MathUtils.lerp(0.92, 0.38, this.chargeRatio);
+      this.squashY = THREE.MathUtils.lerp(this.squashY, targetSquash, Math.min(1, dt * 14));
+      this.squashVel = 0;
+
+      const shakeAmp = 0.016 + this.chargeRatio * 0.052;
+      this.bodyPivot.position.set(
+        Math.sin(this.chargeShakeTime * 48) * shakeAmp,
+        0,
+        Math.cos(this.chargeShakeTime * 57) * shakeAmp
+      );
+
+      const isMax = this.chargeRatio >= 1.0;
+      const auraY = -(this.squashY * this.radius) + 0.08;
+
+      if (this.chargeAuraMesh) {
+        this.chargeAuraMesh.visible = true;
+        const pulse = isMax
+          ? (1.28 + Math.sin(this.chargeShakeTime * 20) * 0.2)
+          : (0.78 + this.chargeRatio * 0.45);
+        this.chargeAuraMesh.scale.setScalar(pulse);
+        this.chargeAuraMesh.position.y = auraY;
+        this.chargeAuraMesh.material.color.setHex(isMax ? 0xff1e42 : 0xff4769);
+        this.chargeAuraMesh.material.opacity = isMax
+          ? (0.8 + Math.sin(this.chargeShakeTime * 22) * 0.18)
+          : (0.45 + this.chargeRatio * 0.4);
+      }
+
+      if (this.chargeAuraOuterMesh) {
+        this.chargeAuraOuterMesh.visible = this.chargeRatio > 0.25 || isMax;
+        if (this.chargeAuraOuterMesh.visible) {
+          const outerPulse = isMax
+            ? (1.52 + Math.cos(this.chargeShakeTime * 16) * 0.24)
+            : (0.85 + this.chargeRatio * 0.55);
+          this.chargeAuraOuterMesh.scale.setScalar(outerPulse);
+          this.chargeAuraOuterMesh.position.y = auraY + 0.02;
+          this.chargeAuraOuterMesh.material.color.setHex(isMax ? 0xff859d : 0xff9eb3);
+          this.chargeAuraOuterMesh.material.opacity = isMax ? 0.72 : (0.25 + this.chargeRatio * 0.35);
+        }
+      }
+
+      this.chargeSparkTimer -= dt;
+      if (this.chargeSparkTimer <= 0) {
+        this.chargeSparkTimer = isMax ? 0.055 : 0.1;
+        this._spawnChargeSpark(isMax);
+      }
+    } else {
+      this.bodyPivot.position.set(0, 0, 0);
+      if (this.chargeAuraMesh) {
+        this.chargeAuraMesh.visible = false;
+      }
+      if (this.chargeAuraOuterMesh) {
+        this.chargeAuraOuterMesh.visible = false;
+      }
+
+      if (this.exprTimer > 0) {
+        this.exprTimer -= dt;
+        if (this.exprTimer <= 0) {
+          this.setExpression('normal');
+        }
+      } else if (!this.isGrounded) {
+        if (this.velocity.y < -12) {
+          this.setExpression('fall');
+        } else if (this.velocity.y > 2) {
+          this.setExpression('jump');
+        }
+      } else if (this.expression !== 'normal' && this.expression !== 'land') {
         this.setExpression('normal');
       }
-    } else if (!this.isGrounded) {
-      if (this.velocity.y < -12) {
-        this.setExpression('fall');
-      } else if (this.velocity.y > 2) {
-        this.setExpression('jump');
-      }
-    } else if (this.expression !== 'normal' && this.expression !== 'land') {
-      this.setExpression('normal');
-    }
 
-    const k = 190;
-    const damp = 14;
-    const force = (1.0 - this.squashY) * k - this.squashVel * damp;
-    this.squashVel += force * dt;
-    this.squashY += this.squashVel * dt;
-    this.squashY = THREE.MathUtils.clamp(this.squashY, 0.55, 1.55);
+      const k = 190;
+      const damp = 14;
+      const force = (1.0 - this.squashY) * k - this.squashVel * damp;
+      this.squashVel += force * dt;
+      this.squashY += this.squashVel * dt;
+      this.squashY = THREE.MathUtils.clamp(this.squashY, 0.35, 1.72);
+    }
 
     const xzScale = 1 / Math.sqrt(this.squashY);
     this.bodyPivot.scale.set(xzScale, this.squashY, xzScale);
 
-    const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
+    const bottomOffset = (this.squashY - 1.0) * this.radius * (this.isChargingJump ? 0.94 : 0.65);
     this.group.position.set(this.position.x, this.position.y + bottomOffset, this.position.z);
 
     const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
@@ -513,6 +779,7 @@ class Player {
     this.remoteTargetSquash = state.sq;
     this.isGrounded = !!state.g;
     this.isRidingPartner = !!state.rd;
+    this.isChargingJump = !!state.cg;
     if (typeof state.wg !== 'undefined') {
       this.setWingsEquipped(!!state.wg);
     }
@@ -525,7 +792,7 @@ class Player {
   }
 
   updateRemoteVisuals(dt, shadowInfo = null, ridingHostPos = null) {
-    this._updateRingsAndBlink(dt);
+    this._updateEffectsAndBlink(dt);
 
     const posAlpha = 1 - Math.exp(-18 * dt);
 
@@ -554,7 +821,26 @@ class Player {
     const xzScale = 1 / Math.sqrt(this.squashY);
     this.bodyPivot.scale.set(xzScale, this.squashY, xzScale);
 
-    const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
+    if (this.isChargingJump) {
+      this.chargeShakeTime += dt;
+      const isMax = this.squashY <= 0.44;
+      const shakeAmp = isMax ? 0.05 : 0.03;
+      this.bodyPivot.position.set(
+        Math.sin(this.chargeShakeTime * 48) * shakeAmp,
+        0,
+        Math.cos(this.chargeShakeTime * 57) * shakeAmp
+      );
+
+      this.chargeSparkTimer -= dt;
+      if (this.chargeSparkTimer <= 0) {
+        this.chargeSparkTimer = isMax ? 0.07 : 0.13;
+        this._spawnChargeSpark(isMax);
+      }
+    } else {
+      this.bodyPivot.position.set(0, 0, 0);
+    }
+
+    const bottomOffset = (this.squashY - 1.0) * this.radius * (this.isChargingJump ? 0.94 : 0.65);
     this.group.position.set(this.position.x, this.position.y + bottomOffset, this.position.z);
     this.rollHolder.quaternion.copy(this.rollQuat);
     this._updateWingAnimation(dt);
@@ -569,12 +855,18 @@ class Player {
       for (const ring of this.jumpRings) {
         this.scene.remove(ring.mesh);
       }
+      for (const p of this.chargeParticles) {
+        this.scene.remove(p.mesh);
+      }
     }
     this.scene = nextScene;
     this.scene.add(this.group);
     this.scene.add(this.dropShadow);
     for (const ring of this.jumpRings) {
       this.scene.add(ring.mesh);
+    }
+    for (const p of this.chargeParticles) {
+      this.scene.add(p.mesh);
     }
   }
 
@@ -587,7 +879,13 @@ class Player {
       ring.mesh.material.dispose();
     }
     this.jumpRings = [];
+    for (const p of this.chargeParticles) {
+      this.scene.remove(p.mesh);
+      p.mesh.material.dispose();
+    }
+    this.chargeParticles = [];
   }
 }
 
 Player._wingGeo = null;
+Player._starGeo = null;

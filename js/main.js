@@ -149,6 +149,9 @@ class MaimaiGame {
     this.ownedItems = {};
     this._saveOwnedItems();
     this.wingsDesired = false;
+    if (this.player) {
+      this.player.clearJumpCharge();
+    }
     this._syncWingsButtonAndEquip();
     this.ui.updateSkyCount(this.skyCount, false);
     this.ui.refreshShopUI();
@@ -208,6 +211,26 @@ class MaimaiGame {
     this.ui.showToast('「天使のはね」をかったよ！', 3.0);
   }
 
+  buySuperballGummy() {
+    if (this.ownedItems.superball_gummy) return;
+    const price = 150;
+    if (this.skyCount < price) {
+      this.sound.playClick();
+      this.ui.showToast('スカイがたりないよ！', 2.2);
+      return;
+    }
+
+    this.skyCount -= price;
+    this._saveSkyCount();
+    this.ownedItems.superball_gummy = true;
+    this._saveOwnedItems();
+
+    this.ui.updateSkyCount(this.skyCount, true);
+    this.ui.refreshShopUI();
+    this.sound.playBuy();
+    this.ui.showToast('「スーパーボールグミ」をかったよ！', 3.0);
+  }
+
   _updateWarpPartnerVisibility() {
     const canWarp =
       this.gameMode !== 'solo' &&
@@ -255,6 +278,7 @@ class MaimaiGame {
       ex: this.player.expression,
       g: this.player.isGrounded,
       rd: this.player.isRidingPartner ? 1 : 0,
+      cg: this.player.isChargingJump ? 1 : 0,
       wg: this.player.hasWingsEquipped ? 1 : 0,
       ch: this.player.chatText
     };
@@ -405,11 +429,18 @@ class MaimaiGame {
             else this.sound.playDoubleJump(scale);
           }
         }
+      } else if (data.type === 'sj') {
+        if (this.remotePlayer && this.remoteArea === this.currentArea) {
+          this.remotePlayer.spawnSuperJumpEffect(!!data.max);
+        }
       } else if (data.type === 'se') {
         const scale = this._getRemoteSoundScale();
         if (scale <= 0) return;
         if (data.name === 'jump') this.sound.playJump(scale);
         else if (data.name === 'wing') this.sound.playWingFlap(scale);
+        else if (data.name === 'gummy_ready') this.sound.playGummyChargeMax(scale);
+        else if (data.name === 'gummy_jump') this.sound.playGummyJump(false, scale);
+        else if (data.name === 'gummy_max') this.sound.playGummyJump(true, scale);
         else if (data.name === 'bounce') this.sound.playBounce(scale);
         else if (data.name === 'land') this.sound.playLand(scale);
         else if (data.name === 'respawn') this.sound.playRespawn(scale);
@@ -910,6 +941,9 @@ class MaimaiGame {
     if (this.isPlaying && !this.isPaused) {
       this._updateGame(dt);
     } else if (this.isPlaying && this.isPaused) {
+      if (this.player.isChargingJump) {
+        this.player.clearJumpCharge();
+      }
       this._syncNetwork(dt);
       const partnerHere = !!(this.remotePlayer && this.remoteArea === this.currentArea);
       this._updateWarpPartnerVisibility();
@@ -1157,6 +1191,8 @@ class MaimaiGame {
     const move = this.controls.getMoveVector();
     const inputMag = Math.min(1, Math.hypot(move.x, move.y));
     const jumpPressed = this.controls.consumeJump();
+    const jumpReleased = this.controls.consumeJumpRelease();
+    const isJumpHolding = this.controls.isJumpHolding();
     if (jumpPressed) {
       this.player.jumpBufferTimer = 0.14;
     } else if (this.player.jumpBufferTimer > 0) {
@@ -1165,6 +1201,7 @@ class MaimaiGame {
 
     // 仲間の頭に乗っている間の固定処理
     if (this.player.isRidingPartner && partnerHere) {
+      this.player.clearJumpCharge();
       if (this.player.jumpBufferTimer > 0) {
         this.player.isRidingPartner = false;
         this.physics.setRideCooldown(0.28);
@@ -1199,7 +1236,11 @@ class MaimaiGame {
 
     // 通常移動・物理処理
     if (!this.player.isRidingPartner) {
-      const didDoubleJump = this.physics.stepMovement(
+      const isGummyActive =
+        !!this.ownedItems.superball_gummy &&
+        (this.currentArea === 'sky' || this.currentArea === 'castle');
+
+      const moveRes = this.physics.stepMovement(
         this.player,
         move,
         inputMag,
@@ -1207,10 +1248,18 @@ class MaimaiGame {
         dt,
         this.sound,
         (name) => this.sendSe(name),
-        this.currentArea === 'sky'
+        this.currentArea === 'sky',
+        {
+          enabled: isGummyActive,
+          isJumpHolding,
+          jumpReleased
+        }
       );
-      if (didDoubleJump && this.network.isConnected) {
+      if (moveRes && moveRes.didDoubleJump && this.network.isConnected) {
         this.network.send({ type: 'dj' });
+      }
+      if (moveRes && moveRes.superJumpType && this.network.isConnected) {
+        this.network.send({ type: 'sj', max: moveRes.superJumpType === 'max' ? 1 : 0 });
       }
 
       const wasGrounded = this.player.isGrounded;

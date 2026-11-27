@@ -44,6 +44,8 @@ class UIManager {
     this.shopSkyBalanceEl = document.getElementById('shop-sky-balance');
     this.shopItemWingsCard = document.getElementById('shop-item-wings');
     this.btnBuyWings = document.getElementById('btn-buy-wings');
+    this.shopItemGummyCard = document.getElementById('shop-item-gummy');
+    this.btnBuyGummy = document.getElementById('btn-buy-gummy');
 
     this.localBubble = document.getElementById('local-chat-bubble');
     this.localBubbleText = document.getElementById('local-chat-bubble-text');
@@ -205,6 +207,13 @@ class UIManager {
       e.currentTarget.blur();
       game.buyAngelWings();
     });
+
+    if (this.btnBuyGummy) {
+      this.btnBuyGummy.addEventListener('click', (e) => {
+        e.currentTarget.blur();
+        game.buySuperballGummy();
+      });
+    }
 
     document.getElementById('btn-close-shop').addEventListener('click', (e) => {
       e.currentTarget.blur();
@@ -490,6 +499,7 @@ class UIManager {
   refreshShopUI() {
     const game = this.game;
     const owned = !!game.ownedItems.angel_wings;
+    const gummyOwned = !!game.ownedItems.superball_gummy;
     if (this.shopSkyBalanceEl) {
       this.shopSkyBalanceEl.textContent = String(game.skyCount);
     }
@@ -501,6 +511,16 @@ class UIManager {
       const span = this.btnBuyWings.querySelector('span');
       if (span) {
         span.textContent = owned ? 'かったよ' : '100 スカイ';
+      }
+    }
+    if (this.shopItemGummyCard) {
+      this.shopItemGummyCard.classList.toggle('owned', gummyOwned);
+    }
+    if (this.btnBuyGummy) {
+      this.btnBuyGummy.disabled = gummyOwned;
+      const span = this.btnBuyGummy.querySelector('span');
+      if (span) {
+        span.textContent = gummyOwned ? 'かったよ' : '150 スカイ';
       }
     }
   }

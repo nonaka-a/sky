@@ -6,6 +6,8 @@ class CastleInterior {
 
     this.doorZ = 14.1;
     this.portalZ = -11.6;
+    this.flyPortalX = 5.8;
+    this.flyPortalZ = -10.0;
     this.openAmount = 0;
     this.doorOpenAngle = Math.PI * 0.58;
     this.isFloorHidden = false;
@@ -17,6 +19,7 @@ class CastleInterior {
     this._createMarbleFloor();
     this._createFloatingDoor();
     this._createWarpPortal();
+    this._createFlyWarpPortal();
   }
 
   _createLighting() {
@@ -640,6 +643,108 @@ class CastleInterior {
     return Math.hypot(dx, dz) < 1.38 && pos.y >= 0 && pos.y < 3.4;
   }
 
+  _createFlyWarpPortal() {
+    // 夜空側（x = 11.6, z = 0）に浮く星と月色の円形ワープポータル
+    const portalCanvas = document.createElement('canvas');
+    portalCanvas.width = 256;
+    portalCanvas.height = 256;
+    const ctx = portalCanvas.getContext('2d');
+
+    const grad = ctx.createRadialGradient(128, 128, 10, 128, 128, 124);
+    grad.addColorStop(0.0, 'rgba(255, 252, 224, 0.98)');
+    grad.addColorStop(0.32, 'rgba(255, 225, 130, 0.88)');
+    grad.addColorStop(0.68, 'rgba(130, 152, 255, 0.72)');
+    grad.addColorStop(0.92, 'rgba(90, 110, 230, 0.42)');
+    grad.addColorStop(1.0, 'rgba(90, 110, 230, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+
+    ctx.strokeStyle = 'rgba(255, 248, 200, 0.65)';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 3; i++) {
+      const a0 = (i / 3) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(128, 128, 52 + i * 16, a0, a0 + Math.PI * 0.9);
+      ctx.stroke();
+    }
+
+    const portalTex = new THREE.CanvasTexture(portalCanvas);
+    portalTex.encoding = THREE.sRGBEncoding;
+
+    this.flyPortalGroup = new THREE.Group();
+    this.flyPortalGroup.position.set(this.flyPortalX, 1.75, this.flyPortalZ);
+    this.flyPortalGroup.rotation.y = -Math.atan2(this.flyPortalX, -this.flyPortalZ);
+    this.scene.add(this.flyPortalGroup);
+
+    this.flyPortalDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.48, 36),
+      new THREE.MeshBasicMaterial({
+        map: portalTex,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      })
+    );
+    this.flyPortalGroup.add(this.flyPortalDisc);
+
+    const outerRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.5, 0.075, 10, 40),
+      new THREE.MeshBasicMaterial({ color: 0xffe17d })
+    );
+    this.flyPortalGroup.add(outerRing);
+
+    const innerRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.22, 0.035, 8, 36),
+      new THREE.MeshBasicMaterial({ color: 0xa8b4ff })
+    );
+    this.flyPortalGroup.add(innerRing);
+
+    // 床面反射用ポータル
+    this.flyPortalReflectGroup = new THREE.Group();
+    this.flyPortalReflectGroup.position.set(this.flyPortalX, -1.75, this.flyPortalZ);
+    this.flyPortalReflectGroup.rotation.y = -Math.atan2(this.flyPortalX, -this.flyPortalZ);
+    this.flyPortalReflectGroup.scale.set(1, -1, 1);
+    this.flyPortalReflectGroup.renderOrder = -1;
+    this.scene.add(this.flyPortalReflectGroup);
+
+    this.flyPortalReflectDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.48, 28),
+      new THREE.MeshBasicMaterial({
+        map: portalTex,
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false,
+        depthTest: true,
+        side: THREE.DoubleSide,
+        stencilWrite: true,
+        stencilRef: 1,
+        stencilFunc: THREE.EqualStencilFunc
+      })
+    );
+    this.flyPortalReflectGroup.add(this.flyPortalReflectDisc);
+
+    const reflRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffe17d,
+      transparent: true,
+      opacity: 0.24,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.BackSide,
+      stencilWrite: true,
+      stencilRef: 1,
+      stencilFunc: THREE.EqualStencilFunc
+    });
+    const reflOuterRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.075, 8, 32), reflRingMat);
+    this.flyPortalReflectGroup.add(reflOuterRing);
+  }
+
+  isPlayerInFlyPortal(pos) {
+    if (!pos) return false;
+    const dx = pos.x - this.flyPortalX;
+    const dz = pos.z - this.flyPortalZ;
+    return Math.hypot(dx, dz) < 1.38 && pos.y >= 0 && pos.y < 3.4;
+  }
+
   _syncPlayerReflection(key, playerObj, visible) {
     let entry = this.reflectionPool.get(key);
     if (!entry && playerObj) {
@@ -722,6 +827,7 @@ class CastleInterior {
     this.floorRimMesh.visible = !hideFloor;
     this.doorReflectGroup.visible = !hideFloor;
     this.portalReflectGroup.visible = !hideFloor;
+    this.flyPortalReflectGroup.visible = !hideFloor;
 
     if (hideFloor) {
       for (const entry of this.reflectionPool.values()) {
@@ -757,6 +863,16 @@ class CastleInterior {
     this.portalReflectGroup.position.y = -(1.75 + portalFloatY);
     this.portalReflectGroup.scale.set(pulse, -pulse, pulse);
     this.portalReflectDisc.rotation.z = this.time * 0.85;
+
+    // 夜空側（フライコンテスト）ポータルのアニメーション
+    const flyFloatY = Math.sin(this.time * 1.8 + 1.2) * 0.09;
+    const flyPulse = 1.0 + Math.sin(this.time * 2.6 + 1.2) * 0.035;
+    this.flyPortalGroup.position.y = 1.75 + flyFloatY;
+    this.flyPortalGroup.scale.setScalar(flyPulse);
+    this.flyPortalDisc.rotation.z = -this.time * 0.85;
+    this.flyPortalReflectGroup.position.y = -(1.75 + flyFloatY);
+    this.flyPortalReflectGroup.scale.set(flyPulse, -flyPulse, flyPulse);
+    this.flyPortalReflectDisc.rotation.z = -this.time * 0.85;
 
     // 扉の自動開閉（内側 -Z 側に開くため広めに反応）
     const distLocal = playerPos

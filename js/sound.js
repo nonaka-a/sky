@@ -6,6 +6,12 @@ class SoundManager {
     this.bgmMode = 'default';
     this.defaultBgmAudio = null;
     this.sliderBgmAudio = null;
+    this.flyBgmAudio = null;
+    this.fireworkFiles = [
+      'sounds/firework.mp3',
+      'sounds/firework_s.mp3',
+      'sounds/firework_m.mp3'
+    ];
   }
 
   _ensureDefaultBgm() {
@@ -26,8 +32,22 @@ class SoundManager {
     return this.sliderBgmAudio;
   }
 
+  _ensureFlyBgm() {
+    if (!this.flyBgmAudio && typeof Audio !== 'undefined') {
+      this.flyBgmAudio = new Audio('sounds/mini_fly_BGM.mp3');
+      this.flyBgmAudio.loop = true;
+      this.flyBgmAudio.volume = 0.42;
+    }
+    return this.flyBgmAudio;
+  }
+
   setBgmMode(mode) {
-    const nextMode = mode === 'mini_skySlider' ? 'mini_skySlider' : 'default';
+    const nextMode =
+      mode === 'mini_skySlider'
+        ? 'mini_skySlider'
+        : mode === 'mini_flyContest'
+          ? 'mini_flyContest'
+          : 'default';
     if (this.bgmMode === nextMode) return;
     this.bgmMode = nextMode;
     if (this.isPlayingBgm && this.enabled) {
@@ -165,6 +185,35 @@ class SoundManager {
     this.playTone(620, 740, 0.07, 'triangle', 0.1);
   }
 
+  playRingPass(volScale = 1.0) {
+    this.init();
+    this.playTone(659.25, 880.0, 0.12, 'sine', 0.15 * volScale, 0);
+    this.playTone(987.77, 1318.51, 0.16, 'triangle', 0.13 * volScale, 0.05);
+    this.playTone(1567.98, 1760.0, 0.22, 'sine', 0.11 * volScale, 0.1);
+  }
+
+  playFlyResult(isNewRecord = false) {
+    this.init();
+    if (isNewRecord) {
+      this.playTone(523.25, 523.25, 0.12, 'triangle', 0.14, 0);
+      this.playTone(659.25, 659.25, 0.12, 'triangle', 0.14, 0.09);
+      this.playTone(783.99, 783.99, 0.14, 'triangle', 0.14, 0.18);
+      this.playTone(1046.5, 1046.5, 0.34, 'sine', 0.16, 0.27);
+    } else {
+      this.playTone(523.25, 523.25, 0.12, 'sine', 0.13, 0);
+      this.playTone(659.25, 659.25, 0.14, 'sine', 0.13, 0.09);
+      this.playTone(783.99, 783.99, 0.24, 'triangle', 0.12, 0.18);
+    }
+  }
+
+  playFirework(volScale = 1.0) {
+    if (!this.enabled || typeof Audio === 'undefined') return;
+    const src = this.fireworkFiles[Math.floor(Math.random() * this.fireworkFiles.length)];
+    const audio = new Audio(src);
+    audio.volume = Math.min(1.0, 0.45 * volScale);
+    audio.play().catch(() => {});
+  }
+
   startBgm() {
     if (!this.enabled) return;
     this.init();
@@ -175,7 +224,28 @@ class SoundManager {
         this.defaultBgmAudio.pause();
         this.defaultBgmAudio.currentTime = 0;
       }
+      if (this.flyBgmAudio) {
+        this.flyBgmAudio.pause();
+        this.flyBgmAudio.currentTime = 0;
+      }
       const audio = this._ensureSliderBgm();
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+      return;
+    }
+
+    if (this.bgmMode === 'mini_flyContest') {
+      if (this.defaultBgmAudio) {
+        this.defaultBgmAudio.pause();
+        this.defaultBgmAudio.currentTime = 0;
+      }
+      if (this.sliderBgmAudio) {
+        this.sliderBgmAudio.pause();
+        this.sliderBgmAudio.currentTime = 0;
+      }
+      const audio = this._ensureFlyBgm();
       if (audio) {
         audio.currentTime = 0;
         audio.play().catch(() => {});
@@ -186,6 +256,10 @@ class SoundManager {
     if (this.sliderBgmAudio) {
       this.sliderBgmAudio.pause();
       this.sliderBgmAudio.currentTime = 0;
+    }
+    if (this.flyBgmAudio) {
+      this.flyBgmAudio.pause();
+      this.flyBgmAudio.currentTime = 0;
     }
 
     const defaultAudio = this._ensureDefaultBgm();
@@ -203,6 +277,10 @@ class SoundManager {
     if (this.sliderBgmAudio) {
       this.sliderBgmAudio.pause();
       this.sliderBgmAudio.currentTime = 0;
+    }
+    if (this.flyBgmAudio) {
+      this.flyBgmAudio.pause();
+      this.flyBgmAudio.currentTime = 0;
     }
   }
 }

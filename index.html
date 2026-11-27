@@ -52,6 +52,27 @@
         <span id="slider-timer-value" class="slider-timer-value">00:00.00</span>
       </div>
 
+      <!-- フライコンテスト：距離・ジャンプ回数表示 -->
+      <div id="fly-hud" class="fly-hud hidden">
+        <span class="fly-hud-label">FLY</span>
+        <span id="fly-dist-value" class="fly-hud-value">0.0 m</span>
+        <span class="fly-hud-sep"></span>
+        <span class="fly-jumps-pill">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#5b6ee1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/>
+            <line x1="16" y1="8" x2="2" y2="22"/>
+          </svg>
+          <span id="fly-jumps-value" class="fly-jumps-value">5 / 5</span>
+        </span>
+      </div>
+
+      <!-- フライコンテスト：落下リザルト表示 -->
+      <div id="fly-result" class="fly-result hidden">
+        <div id="fly-result-badge" class="fly-result-badge hidden">NEW RECORD!</div>
+        <div class="fly-result-label">きろく</div>
+        <div id="fly-result-value" class="fly-result-value">0.0 m</div>
+      </div>
+
       <!-- ふれあいテキストウィンドウ -->
       <div id="dialogue-box" class="dialogue-box hidden" aria-live="polite">
         <div class="dialogue-inner">
@@ -372,81 +393,91 @@
     <div id="settings-modal" class="overlay-screen hidden">
       <div class="modal-card">
         <div class="card-inner-frame">
-          <h2 class="modal-title">せってい</h2>
+          <div id="settings-main-view">
+            <h2 class="modal-title">せってい</h2>
 
-          <div class="setting-list">
-            <button id="btn-toggle-sound" class="btn-setting-item">
-              <span class="setting-left">
-                <span class="setting-icon">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
-                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
-                  </svg>
+            <div class="setting-list">
+              <button id="btn-toggle-sound" class="btn-setting-item">
+                <span class="setting-left">
+                  <span class="setting-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    </svg>
+                  </span>
+                  <span class="setting-label">サウンド</span>
                 </span>
-                <span class="setting-label">サウンド</span>
-              </span>
-              <span id="sound-status" class="setting-badge on">ON</span>
-            </button>
+                <span id="sound-status" class="setting-badge on">ON</span>
+              </button>
 
-            <button id="btn-toggle-fullscreen" class="btn-setting-item">
-              <span class="setting-left">
-                <span class="setting-icon">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-                  </svg>
+              <button id="btn-toggle-fullscreen" class="btn-setting-item">
+                <span class="setting-left">
+                  <span class="setting-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                    </svg>
+                  </span>
+                  <span class="setting-label">全画面表示</span>
                 </span>
-                <span class="setting-label">全画面表示</span>
-              </span>
-              <span id="fullscreen-status" class="setting-badge">OFF</span>
-            </button>
+                <span id="fullscreen-status" class="setting-badge">OFF</span>
+              </button>
 
-            <button id="btn-clear-slider-times" class="btn-setting-item">
-              <span class="setting-left">
-                <span class="setting-icon">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6"/>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    <line x1="10" y1="11" x2="10" y2="17"/>
-                    <line x1="14" y1="11" x2="14" y2="17"/>
-                  </svg>
+              <button id="btn-open-minigame-records" class="btn-setting-item">
+                <span class="setting-left">
+                  <span class="setting-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                      <line x1="10" y1="11" x2="10" y2="17"/>
+                      <line x1="14" y1="11" x2="14" y2="17"/>
+                    </svg>
+                  </span>
+                  <span class="setting-label">ミニゲームきろくをけす</span>
                 </span>
-                <span id="clear-slider-label" class="setting-label">タイムきろくをけす</span>
-              </span>
-              <span id="clear-slider-badge" class="setting-badge">RESET</span>
-            </button>
+                <span class="setting-badge">えらぶ</span>
+              </button>
 
-            <button id="btn-clear-sky" class="btn-setting-item">
-              <span class="setting-left">
-                <span class="setting-icon">
-                  <svg viewBox="0 0 24 24" width="18" height="18">
-                    <polygon points="12,3 19,12 12,21 5,12" fill="#ffe159" stroke="#d99616" stroke-width="2" stroke-linejoin="round"/>
-                  </svg>
+              <button id="btn-clear-sky" class="btn-setting-item">
+                <span class="setting-left">
+                  <span class="setting-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                      <polygon points="12,3 19,12 12,21 5,12" fill="#ffe159" stroke="#d99616" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="setting-text-col">
+                    <span id="clear-sky-label" class="setting-label">もってるスカイのきろくをけす</span>
+                    <span class="setting-sub">※かったアイテムも初期化されます</span>
+                  </span>
                 </span>
-                <span class="setting-text-col">
-                  <span id="clear-sky-label" class="setting-label">もってるスカイのきろくをけす</span>
-                  <span class="setting-sub">※かったアイテムも初期化されます</span>
-                </span>
-              </span>
-              <span id="clear-sky-badge" class="setting-badge">RESET</span>
-            </button>
+                <span id="clear-sky-badge" class="setting-badge">RESET</span>
+              </button>
 
-            <button id="btn-back-title" class="btn-setting-item btn-danger">
-              <span class="setting-left">
-                <span class="setting-icon">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                    <polyline points="9 22 9 12 15 12 15 22"/>
-                  </svg>
+              <button id="btn-back-title" class="btn-setting-item btn-danger">
+                <span class="setting-left">
+                  <span class="setting-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                      <polyline points="9 22 9 12 15 12 15 22"/>
+                    </svg>
+                  </span>
+                  <span class="setting-label">タイトルにもどる</span>
                 </span>
-                <span class="setting-label">タイトルにもどる</span>
-              </span>
+              </button>
+            </div>
+
+            <button id="btn-close-settings" class="btn-primary btn-close">
+              <span>もどる</span>
             </button>
           </div>
 
-          <button id="btn-close-settings" class="btn-primary btn-close">
-            <span>もどる</span>
-          </button>
+          <div id="settings-minigame-view" class="hidden">
+            <h2 class="modal-title">ミニゲームきろくをけす</h2>
+            <div id="minigame-record-list" class="setting-list minigame-record-list"></div>
+            <button id="btn-back-settings-main" class="btn-primary btn-close">
+              <span>もどる</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -469,6 +500,7 @@
   <script src="js/world.js"></script>
   <script src="js/castleInterior.js"></script>
   <script src="js/mini_skySlider.js"></script>
+  <script src="js/mini_flyContest.js"></script>
   <script src="js/controls.js"></script>
   <script src="js/physics.js"></script>
   <script src="js/ui.js"></script>

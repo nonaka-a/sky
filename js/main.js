@@ -13,7 +13,7 @@ class MaimaiGame {
     this.isAtShopCounter = false;
     this.isShopAsking = false;
 
-    // エリア管理（'sky' | 'castle' | 'mini_skySlider'）
+    // エリア管理（'sky' | 'castle' | 'mini_skySlider' | 'mini_flyContest'）
     this.currentArea = 'sky';
     this.remoteArea = 'sky';
     this.isAreaTransitioning = false;
@@ -70,6 +70,7 @@ class MaimaiGame {
     this.world = new SkyWorld(this.scene);
     this.castleInterior = new CastleInterior();
     this.miniSkySlider = new MiniSkySlider();
+    this.miniFlyContest = new MiniFlyContest();
     this.player = new Player(this.scene, { colorTheme: 'red' });
     this.controls = new ControlsManager();
     this.physics = new PhysicsSystem();
@@ -155,8 +156,10 @@ class MaimaiGame {
   }
 
   _syncWingsButtonAndEquip() {
-    const canUseWings = !!this.ownedItems.angel_wings && this.currentArea !== 'mini_skySlider';
-    const equipped = canUseWings && this.wingsDesired;
+    const inSlider = this.currentArea === 'mini_skySlider';
+    const inFly = this.currentArea === 'mini_flyContest';
+    const canUseWings = !!this.ownedItems.angel_wings && !inSlider && !inFly;
+    const equipped = inFly ? !!this.ownedItems.angel_wings : (canUseWings && this.wingsDesired);
     if (this.player) {
       this.player.setWingsEquipped(equipped);
     }
@@ -166,7 +169,7 @@ class MaimaiGame {
   }
 
   toggleWingsEquipped() {
-    if (!this.ownedItems.angel_wings || this.currentArea === 'mini_skySlider') return;
+    if (!this.ownedItems.angel_wings || this.currentArea === 'mini_skySlider' || this.currentArea === 'mini_flyContest') return;
     this.wingsDesired = !this.wingsDesired;
     this._syncWingsButtonAndEquip();
     if (this.wingsDesired) {
@@ -211,13 +214,16 @@ class MaimaiGame {
       this.network.isConnected &&
       !!this.remotePlayer &&
       this.currentArea !== 'mini_skySlider' &&
-      this.remoteArea !== 'mini_skySlider';
+      this.remoteArea !== 'mini_skySlider' &&
+      this.currentArea !== 'mini_flyContest' &&
+      this.remoteArea !== 'mini_flyContest';
     this.ui.updateWarpPartnerVisibility(canWarp);
   }
 
   _getActiveScene() {
     if (this.currentArea === 'castle') return this.castleInterior.scene;
     if (this.currentArea === 'mini_skySlider') return this.miniSkySlider.scene;
+    if (this.currentArea === 'mini_flyContest') return this.miniFlyContest.scene;
     return this.scene;
   }
 
@@ -350,7 +356,14 @@ class MaimaiGame {
         }
       } else if (data.type === 'state') {
         if (data.ar) {
-          this.remoteArea = data.ar === 'castle' ? 'castle' : (data.ar === 'mini_skySlider' ? 'mini_skySlider' : 'sky');
+          this.remoteArea =
+            data.ar === 'castle'
+              ? 'castle'
+              : data.ar === 'mini_skySlider'
+                ? 'mini_skySlider'
+                : data.ar === 'mini_flyContest'
+                  ? 'mini_flyContest'
+                  : 'sky';
         }
         if (this.remotePlayer) {
           this.remotePlayer.applyRemoteState(data);
@@ -619,8 +632,92 @@ class MaimaiGame {
     }, 240);
   }
 
+  _enterMiniFlyContest() {
+    if (this.isAreaTransitioning || this.currentArea === 'mini_flyContest') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.2;
+    this.player.isRidingPartner = false;
+    this.ui.setRespawnFlash(true);
+    this.sound.playRespawn();
+    this.sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'mini_flyContest';
+      this.sound.setBgmMode('mini_flyContest');
+      this.player.setScene(this.miniFlyContest.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.miniFlyContest.scene);
+        this.remotePlayer.group.visible = false;
+        this.remotePlayer.dropShadow.visible = false;
+      }
+
+      this._syncWingsButtonAndEquip();
+      this.miniFlyContest.startNewRun(this.player);
+
+      this.ui.hideFlyResult();
+      this.ui.showFlyHud(
+        this.miniFlyContest.formatDistance(0),
+        this.player.airJumpsLeft,
+        this.player.getMaxAirJumps()
+      );
+
+      this.camLookTarget.set(this.player.position.x, this.player.position.y + 0.9, this.player.position.z);
+      this.miniFlyContest.updateCamera(this.camera, this.camLookTarget, this.player, 1.0);
+      this.sendStatePacket();
+
+      this.ui.setRespawnFlash(false);
+      this.isAreaTransitioning = false;
+    }, 220);
+  }
+
+  _returnToCastleFromFlyContest() {
+    if (this.isAreaTransitioning || this.currentArea === 'castle') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.2;
+    this.player.isRidingPartner = false;
+    this.ui.setRespawnFlash(true);
+    this.sound.playRespawn();
+    this.sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'castle';
+      this.sound.setBgmMode('default');
+      this.ui.hideFlyHud();
+      this.ui.hideFlyResult();
+      this.player.setScene(this.castleInterior.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.castleInterior.scene);
+      }
+
+      this._syncWingsButtonAndEquip();
+      const fx = this.castleInterior.flyPortalX;
+      const fz = this.castleInterior.flyPortalZ;
+      const fLen = Math.hypot(fx, fz) || 1;
+      const spawnDist = Math.max(2.0, fLen - 3.4);
+      const spawnPos = new THREE.Vector3((fx / fLen) * spawnDist, 4.8, (fz / fLen) * spawnDist);
+      const faceYaw = Math.atan2(-fx, -fz);
+      this.player.facingYaw = faceYaw;
+      this.player.resetTo(spawnPos);
+      this.camYaw = faceYaw;
+      this.camPitch = 0.24;
+      this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
+      this._updateCamera(1.0);
+      this.castleInterior.updateFloorVisibility(this.camera.position, this.camLookTarget);
+      this.sendStatePacket();
+
+      this.ui.setRespawnFlash(false);
+      this.isAreaTransitioning = false;
+    }, 240);
+  }
+
   warpToPartner() {
-    if (!this.remotePlayer || this.currentArea === 'mini_skySlider' || this.remoteArea === 'mini_skySlider') return;
+    if (
+      !this.remotePlayer ||
+      this.currentArea === 'mini_skySlider' ||
+      this.remoteArea === 'mini_skySlider' ||
+      this.currentArea === 'mini_flyContest' ||
+      this.remoteArea === 'mini_flyContest'
+    ) return;
     this.ui.setRespawnFlash(true);
 
     if (this.remoteArea === 'castle') {
@@ -798,6 +895,9 @@ class MaimaiGame {
     if (this.currentArea === 'mini_skySlider') {
       return this.miniSkySlider.getShadowGroundInfo(px, py, pz);
     }
+    if (this.currentArea === 'mini_flyContest') {
+      return this.miniFlyContest.getShadowGroundInfo(px, py, pz);
+    }
     return this.world.getShadowGroundInfo(px, py, pz);
   }
 
@@ -948,6 +1048,61 @@ class MaimaiGame {
 
       if ((res.courseOut || res.enteredGoalPortal) && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
         this._returnToCastleFromSlider();
+      }
+
+      this._syncNetwork(dt);
+      this.ui.updateChatBubbles();
+      return;
+    }
+
+    // ミニゲーム「フライコンテスト」専用更新ループ
+    if (this.currentArea === 'mini_flyContest') {
+      const camD = this.controls.consumeCameraDelta();
+      this.miniFlyContest.camYawOffset = THREE.MathUtils.clamp(
+        this.miniFlyContest.camYawOffset - camD.x * 0.0055,
+        -1.2,
+        1.2
+      );
+      this.miniFlyContest.camPitchOffset = THREE.MathUtils.clamp(
+        this.miniFlyContest.camPitchOffset + camD.y * 0.0045,
+        -0.35,
+        0.85
+      );
+
+      if (this.remotePlayer) {
+        this.remotePlayer.group.visible = false;
+        this.remotePlayer.dropShadow.visible = false;
+      }
+
+      const res = this.miniFlyContest.update(
+        dt,
+        this.player,
+        this.controls,
+        this.physics,
+        this.sound,
+        (name) => this.sendSe(name)
+      );
+
+      this.ui.updateFlyHud(
+        this.miniFlyContest.formatDistance(res.distance),
+        res.airJumpsLeft,
+        res.maxAirJumps
+      );
+      if (res.gotSky > 0) {
+        this.addSky(res.gotSky);
+        this.sound.playCoin();
+      }
+      if (res.justFinished) {
+        this.ui.showFlyResult(
+          this.miniFlyContest.formatDistance(res.distance),
+          this.miniFlyContest.isNewRecord
+        );
+      }
+
+      this.miniFlyContest.updateCamera(this.camera, this.camLookTarget, this.player, dt);
+
+      if (res.shouldReturnCastle && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
+        this._returnToCastleFromFlyContest();
       }
 
       this._syncNetwork(dt);
@@ -1261,6 +1416,18 @@ class MaimaiGame {
         this.castleInterior.isPlayerInPortal(this.player.position)
       ) {
         this._enterMiniSkySlider();
+      } else if (
+        !this.isAreaTransitioning &&
+        this.areaPortalCooldown <= 0 &&
+        this.castleInterior.isPlayerInFlyPortal(this.player.position)
+      ) {
+        if (!this.ownedItems.angel_wings) {
+          this.areaPortalCooldown = 1.6;
+          this.sound.playClick();
+          this.ui.showToast('「天使のはね」をショップでかうとあそべるよ！', 2.8);
+        } else {
+          this._enterMiniFlyContest();
+        }
       }
     } else if (!this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
       const entranceArea = this.world.checkStructureEntrances(this.player.position);

@@ -26,6 +26,12 @@ class UIManager {
     this.toastBanner = document.getElementById('toast-banner');
     this.sliderTimerEl = document.getElementById('slider-timer');
     this.sliderTimerValueEl = document.getElementById('slider-timer-value');
+    this.flyHudEl = document.getElementById('fly-hud');
+    this.flyDistValueEl = document.getElementById('fly-dist-value');
+    this.flyJumpsValueEl = document.getElementById('fly-jumps-value');
+    this.flyResultEl = document.getElementById('fly-result');
+    this.flyResultBadgeEl = document.getElementById('fly-result-badge');
+    this.flyResultValueEl = document.getElementById('fly-result-value');
     this.skyCounterEl = document.getElementById('sky-counter');
     this.skyCountValueEl = document.getElementById('sky-count-value');
     this.btnWarpPartner = document.getElementById('btn-warp-partner');
@@ -44,6 +50,8 @@ class UIManager {
     this.remoteBubble = document.getElementById('remote-chat-bubble');
     this.remoteBubbleText = document.getElementById('remote-chat-bubble-text');
     this.portalInfoBubble = document.getElementById('portal-info-bubble');
+    this.portalInfoTitleEl = this.portalInfoBubble ? this.portalInfoBubble.querySelector('.portal-info-title') : null;
+    this.portalInfoDescEl = this.portalInfoBubble ? this.portalInfoBubble.querySelector('.portal-info-desc') : null;
 
     this.inputRoomId = document.getElementById('input-room-id');
     this.joinErrorMsg = document.getElementById('join-error-msg');
@@ -253,21 +261,99 @@ class UIManager {
       this._closeChatModal();
     });
 
-    const btnClearTimes = document.getElementById('btn-clear-slider-times');
-    const clearLabel = document.getElementById('clear-slider-label');
-    const clearBadge = document.getElementById('clear-slider-badge');
-    let clearConfirmTimer = null;
-    let clearConfirmArmed = false;
+    const settingsMainView = document.getElementById('settings-main-view');
+    const settingsMinigameView = document.getElementById('settings-minigame-view');
+    const minigameRecordList = document.getElementById('minigame-record-list');
+    let minigameClearArmedId = null;
+    let minigameClearTimer = null;
 
-    const resetClearButtonState = () => {
-      clearConfirmArmed = false;
-      if (clearConfirmTimer) {
-        clearTimeout(clearConfirmTimer);
-        clearConfirmTimer = null;
+    // 今後のミニゲーム追加時はここへ登録するだけで個別リセット対象に追加される
+    const minigameRecordDefs = [
+      {
+        id: 'skySlider',
+        name: 'スカイスライダー',
+        hasRecord: () => !!(game.miniSkySlider && game.miniSkySlider.bestTimes.length > 0),
+        clear: () => game.miniSkySlider && game.miniSkySlider.clearBestTimes()
+      },
+      {
+        id: 'flyContest',
+        name: 'フライコンテスト',
+        hasRecord: () => !!(game.miniFlyContest && game.miniFlyContest.bestDistances.length > 0),
+        clear: () => game.miniFlyContest && game.miniFlyContest.clearBestDistances()
       }
-      clearLabel.textContent = 'タイムきろくをけす';
-      clearBadge.textContent = 'RESET';
-      clearBadge.classList.remove('on');
+    ];
+
+    const resetMinigameRecordState = () => {
+      minigameClearArmedId = null;
+      if (minigameClearTimer) {
+        clearTimeout(minigameClearTimer);
+        minigameClearTimer = null;
+      }
+    };
+
+    const renderMinigameRecordList = () => {
+      if (!minigameRecordList) return;
+      minigameRecordList.innerHTML = '';
+
+      for (const def of minigameRecordDefs) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-setting-item';
+
+        const left = document.createElement('span');
+        left.className = 'setting-left';
+        const label = document.createElement('span');
+        label.className = 'setting-label';
+        const isArmed = minigameClearArmedId === def.id;
+        label.textContent = isArmed ? `${def.name}をほんとうにけす？` : def.name;
+        left.appendChild(label);
+
+        const badge = document.createElement('span');
+        badge.className = 'setting-badge';
+        const hasRec = def.hasRecord();
+        if (isArmed) {
+          badge.textContent = 'もう1回';
+          badge.classList.add('on');
+        } else if (hasRec) {
+          badge.textContent = 'RESET';
+        } else {
+          badge.textContent = 'きろくなし';
+          btn.disabled = true;
+          btn.style.opacity = '0.55';
+        }
+
+        btn.appendChild(left);
+        btn.appendChild(badge);
+
+        btn.addEventListener('click', (e) => {
+          e.currentTarget.blur();
+          game.sound.playClick();
+          if (!def.hasRecord()) return;
+
+          if (minigameClearArmedId !== def.id) {
+            resetMinigameRecordState();
+            minigameClearArmedId = def.id;
+            minigameClearTimer = setTimeout(() => {
+              resetMinigameRecordState();
+              renderMinigameRecordList();
+            }, 3500);
+            renderMinigameRecordList();
+            return;
+          }
+
+          def.clear();
+          resetMinigameRecordState();
+          renderMinigameRecordList();
+          this.showToast(`${def.name}のきろくをけしました`, 2.8);
+        });
+
+        minigameRecordList.appendChild(btn);
+      }
+    };
+
+    const showSettingsMainView = () => {
+      resetMinigameRecordState();
+      if (settingsMainView) settingsMainView.classList.remove('hidden');
+      if (settingsMinigameView) settingsMinigameView.classList.add('hidden');
     };
 
     const btnClearSky = document.getElementById('btn-clear-sky');
@@ -291,7 +377,7 @@ class UIManager {
       e.currentTarget.blur();
       game.sound.playClick();
       game.isPaused = true;
-      resetClearButtonState();
+      showSettingsMainView();
       resetClearSkyButtonState();
       this.settingsModal.classList.remove('hidden');
     });
@@ -300,9 +386,25 @@ class UIManager {
       e.currentTarget.blur();
       game.sound.playClick();
       game.isPaused = false;
-      resetClearButtonState();
+      showSettingsMainView();
       resetClearSkyButtonState();
       this.settingsModal.classList.add('hidden');
+    });
+
+    document.getElementById('btn-open-minigame-records').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      game.sound.playClick();
+      resetClearSkyButtonState();
+      resetMinigameRecordState();
+      renderMinigameRecordList();
+      if (settingsMainView) settingsMainView.classList.add('hidden');
+      if (settingsMinigameView) settingsMinigameView.classList.remove('hidden');
+    });
+
+    document.getElementById('btn-back-settings-main').addEventListener('click', (e) => {
+      e.currentTarget.blur();
+      game.sound.playClick();
+      showSettingsMainView();
     });
 
     document.getElementById('btn-toggle-sound').addEventListener('click', (e) => {
@@ -318,24 +420,6 @@ class UIManager {
       e.currentTarget.blur();
       game.sound.playClick();
       this._toggleFullscreen();
-    });
-
-    btnClearTimes.addEventListener('click', (e) => {
-      e.currentTarget.blur();
-      game.sound.playClick();
-      if (!clearConfirmArmed) {
-        clearConfirmArmed = true;
-        clearLabel.textContent = 'ほんとうにけす？';
-        clearBadge.textContent = 'もう1回';
-        clearBadge.classList.add('on');
-        clearConfirmTimer = setTimeout(resetClearButtonState, 3500);
-        return;
-      }
-      game.miniSkySlider.clearBestTimes();
-      resetClearButtonState();
-      game.isPaused = false;
-      this.settingsModal.classList.add('hidden');
-      this.showToast('タイムアタックのきろくをけしました', 2.8);
     });
 
     btnClearSky.addEventListener('click', (e) => {
@@ -550,6 +634,32 @@ class UIManager {
     this.sliderTimerEl.classList.remove('finished');
   }
 
+  showFlyHud(distText, jumpsLeft, maxJumps) {
+    this.flyHudEl.classList.remove('hidden');
+    this.flyDistValueEl.textContent = distText;
+    this.flyJumpsValueEl.textContent = `${jumpsLeft} / ${maxJumps}`;
+  }
+
+  updateFlyHud(distText, jumpsLeft, maxJumps) {
+    this.flyDistValueEl.textContent = distText;
+    this.flyJumpsValueEl.textContent = `${jumpsLeft} / ${maxJumps}`;
+  }
+
+  hideFlyHud() {
+    this.flyHudEl.classList.add('hidden');
+  }
+
+  showFlyResult(distText, isNewRecord) {
+    this.flyResultEl.classList.remove('hidden');
+    this.flyResultValueEl.textContent = distText;
+    this.flyResultBadgeEl.classList.toggle('hidden', !isNewRecord);
+  }
+
+  hideFlyResult() {
+    this.flyResultEl.classList.add('hidden');
+    this.flyResultBadgeEl.classList.add('hidden');
+  }
+
   hideRemoteBubble() {
     this.remoteBubble.classList.add('hidden');
   }
@@ -561,6 +671,8 @@ class UIManager {
     this.shopModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.hideSliderTimer();
+    this.hideFlyHud();
+    this.hideFlyResult();
     this.hud.classList.remove('hidden');
     this.hideDialogue();
 
@@ -591,6 +703,8 @@ class UIManager {
     this.shopModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.hideSliderTimer();
+    this.hideFlyHud();
+    this.hideFlyResult();
     this.hud.classList.add('hidden');
     this.roomBadge.classList.add('hidden');
     this.btnWarpPartner.classList.add('hidden');
@@ -642,13 +756,33 @@ class UIManager {
     }
 
     const pz = game.castleInterior.portalZ;
-    const distToPlayer = Math.hypot(game.player.position.x, game.player.position.z - pz);
-    if (distToPlayer > 6.8) {
+    const fx = game.castleInterior.flyPortalX;
+    const fz = game.castleInterior.flyPortalZ;
+    const distSlider = Math.hypot(game.player.position.x, game.player.position.z - pz);
+    const distFly = Math.hypot(game.player.position.x - fx, game.player.position.z - fz);
+
+    const isFlyNearest = distFly < distSlider;
+    const minDist = isFlyNearest ? distFly : distSlider;
+    if (minDist > 6.8) {
       this.portalInfoBubble.classList.add('hidden');
       return;
     }
 
-    this._tmpBubblePos.set(0, 3.85, pz);
+    if (this.portalInfoTitleEl && this.portalInfoDescEl) {
+      if (isFlyNearest) {
+        this.portalInfoTitleEl.textContent = 'フライコンテスト';
+        this.portalInfoDescEl.innerHTML = '天使のはねで遠くまでとぼう！<br>光の輪をくぐるとジャンプかいふく！';
+      } else {
+        this.portalInfoTitleEl.textContent = 'スカイスライダー';
+        this.portalInfoDescEl.innerHTML = 'まえ：かそく ／ さゆう：ラインとり<br>ジャンプ：おじゃま雲をよけよう！';
+      }
+    }
+
+    if (isFlyNearest) {
+      this._tmpBubblePos.set(fx, 3.85, fz);
+    } else {
+      this._tmpBubblePos.set(0, 3.85, pz);
+    }
     const camDist = game.camera.position.distanceTo(this._tmpBubblePos);
     this._tmpBubblePos.applyMatrix4(game.camera.matrixWorldInverse);
     if (this._tmpBubblePos.z >= -0.2) {

@@ -333,6 +333,17 @@ class GardenIsland extends StructureBase {
     return Math.hypot(dx, dz) <= range && dy >= -0.5 && dy <= 3.5;
   }
 
+  checkEntrance(playerPos) {
+    if (!this.isBeanstalkGrown || !playerPos) return null;
+    const dx = playerPos.x - this.position.x;
+    const dz = playerPos.z - this.position.z;
+    const localY = playerPos.y - this.groundWorldY;
+    if (Math.hypot(dx, dz) <= 12.0 && localY >= 80.0) {
+      return 'giant_island';
+    }
+    return null;
+  }
+
   getSafeSpot(playerPos, radius) {
     return new THREE.Vector3(
       this.position.x - 3.6,

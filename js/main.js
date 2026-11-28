@@ -13,7 +13,7 @@ class MaimaiGame {
     this.isAtShopCounter = false;
     this.isShopAsking = false;
 
-    // エリア管理（'sky' | 'castle' | 'mini_skySlider' | 'mini_flyContest'）
+    // エリア管理（'sky' | 'castle' | 'giant_island' | 'mini_skySlider' | 'mini_flyContest'）
     this.currentArea = 'sky';
     this.remoteArea = 'sky';
     this.isAreaTransitioning = false;
@@ -24,7 +24,11 @@ class MaimaiGame {
     this.remotePlayer = null;
     this.remoteHeartState = null;
     this.remoteStarState = null;
+    this.remoteGiantState = null;
     this.netSendTimer = 0;
+
+    // 巨大まいまい乗り状態
+    this._ridingGiantMaimai = null;
 
     // NPCふれあい状態
     this.isTouchingHeart = false;
@@ -87,6 +91,7 @@ class MaimaiGame {
     this.world = new SkyWorld(this.scene);
     this.world.gardenIsland.setBeanstalkGrown(!!this.ownedItems.beanstalk_grown);
     this.castleInterior = new CastleInterior();
+    this.giantIsland = new GiantIsland();
     this.miniSkySlider = new MiniSkySlider();
     this.miniFlyContest = new MiniFlyContest();
     this.player = new Player(this.scene, { colorTheme: 'red' });
@@ -646,6 +651,7 @@ class MaimaiGame {
 
   _getActiveScene() {
     if (this.currentArea === 'castle') return this.castleInterior.scene;
+    if (this.currentArea === 'giant_island') return this.giantIsland.scene;
     if (this.currentArea === 'mini_skySlider') return this.miniSkySlider.scene;
     if (this.currentArea === 'mini_flyContest') return this.miniFlyContest.scene;
     return this.scene;
@@ -687,6 +693,9 @@ class MaimaiGame {
       payload.wt = this.world.time;
       payload.heart = this.world.heartBuddy.getSyncState();
       payload.star = this.world.starBuddy.getSyncState();
+      if (this.currentArea === 'giant_island' || this.remoteArea === 'giant_island') {
+        payload.giant = this.giantIsland.getSyncState();
+      }
     }
     this.network.send(payload);
   }
@@ -710,7 +719,8 @@ class MaimaiGame {
           hc: this.player.chatText,
           wg: this.player.hasWingsEquipped ? 1 : 0,
           heart: this.world.heartBuddy.getSyncState(),
-          star: this.world.starBuddy.getSyncState()
+          star: this.world.starBuddy.getSyncState(),
+          giant: this.currentArea === 'giant_island' ? this.giantIsland.getSyncState() : null
         });
       } else if (this.gameMode === 'guest') {
         this.ui.showToast('あかまいまいと合流しました！', 3.0);
@@ -739,7 +749,15 @@ class MaimaiGame {
         this.world.syncTime(data.wt);
         this.remoteHeartState = data.heart;
         this.remoteStarState = data.star;
-        const hostArea = data.ar === 'castle' ? 'castle' : (data.ar === 'mini_skySlider' ? 'mini_skySlider' : 'sky');
+        if (data.giant) this.remoteGiantState = data.giant;
+        const hostArea =
+          data.ar === 'castle'
+            ? 'castle'
+            : data.ar === 'giant_island'
+              ? 'giant_island'
+              : data.ar === 'mini_skySlider'
+                ? 'mini_skySlider'
+                : 'sky';
         this.remoteArea = hostArea;
 
         if (hostArea === 'castle') {
@@ -750,6 +768,19 @@ class MaimaiGame {
           const spawnPos = data.hp
             ? new THREE.Vector3(data.hp[0] + 1.2, Math.max(0.6, data.hp[1]), data.hp[2] - 0.8)
             : new THREE.Vector3(1.2, 0.6, 10.5);
+          this.player.resetTo(spawnPos);
+          this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
+        } else if (hostArea === 'giant_island') {
+          this.currentArea = 'giant_island';
+          this.ui.hideSliderTimer();
+          this.player.setScene(this.giantIsland.scene);
+          if (this.remotePlayer) this.remotePlayer.setScene(this.giantIsland.scene);
+          if (data.giant) {
+            this.giantIsland.applySyncState(data.giant, 1.0);
+          }
+          const spawnPos = data.hp
+            ? new THREE.Vector3(data.hp[0] + 1.4, data.hp[1] + 1.0, data.hp[2])
+            : this.giantIsland.getStartPosition(this.player.radius);
           this.player.resetTo(spawnPos);
           this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
         } else if (hostArea === 'mini_skySlider') {
@@ -784,11 +815,13 @@ class MaimaiGame {
           this.remoteArea =
             data.ar === 'castle'
               ? 'castle'
-              : data.ar === 'mini_skySlider'
-                ? 'mini_skySlider'
-                : data.ar === 'mini_flyContest'
-                  ? 'mini_flyContest'
-                  : 'sky';
+              : data.ar === 'giant_island'
+                ? 'giant_island'
+                : data.ar === 'mini_skySlider'
+                  ? 'mini_skySlider'
+                  : data.ar === 'mini_flyContest'
+                    ? 'mini_flyContest'
+                    : 'sky';
         }
         if (this.remotePlayer) {
           this.remotePlayer.applyRemoteState(data);
@@ -800,6 +833,9 @@ class MaimaiGame {
           }
           if (data.star) {
             this.remoteStarState = data.star;
+          }
+          if (data.giant) {
+            this.remoteGiantState = data.giant;
           }
         }
       } else if (data.type === 'star_tag' && this.gameMode === 'host') {
@@ -870,6 +906,7 @@ class MaimaiGame {
     }
     this.remoteHeartState = null;
     this.remoteStarState = null;
+    this.remoteGiantState = null;
     this.ui.hideRemoteBubble();
   }
 
@@ -905,6 +942,7 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -940,6 +978,7 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -990,11 +1029,101 @@ class MaimaiGame {
     }, 220);
   }
 
+  _enterGiantIsland() {
+    if (this.isAreaTransitioning || this.currentArea === 'giant_island') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.2;
+    this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
+    this.isPinkAsking = false;
+    this.isStarAsking = false;
+    this.isShopAsking = false;
+    this.ui.hideDialogue();
+    this.ui.setRespawnFlash(true);
+    this.sound.playRespawn();
+    this.sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'giant_island';
+      this.sound.setBgmMode('default');
+      this.ui.hideSliderTimer();
+      this.player.setScene(this.giantIsland.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.giantIsland.scene);
+      }
+
+      this._syncWingsButtonAndEquip();
+      const startPos = this.giantIsland.getStartPosition(this.player.radius);
+      const lookYaw = Math.atan2(-startPos.x, -startPos.z);
+      this.player.facingYaw = lookYaw;
+      this.player.resetTo(startPos);
+      this.player.velocity.set(0, -1.5, 0);
+      this.camYaw = Math.atan2(startPos.x, startPos.z);
+      this.camPitch = -0.14;
+      this.camLookTarget.set(startPos.x, startPos.y + 0.9, startPos.z);
+      this._updateCamera(1.0);
+      this.sendStatePacket();
+
+      this.ui.setRespawnFlash(false);
+      this.isAreaTransitioning = false;
+    }, 240);
+  }
+
+  _exitGiantIslandToWorld() {
+    if (this.isAreaTransitioning || this.currentArea !== 'giant_island') return;
+    this.isAreaTransitioning = true;
+    this.areaPortalCooldown = 1.4;
+    this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
+    this.ui.setRespawnFlash(true);
+    this.sound.playRespawn();
+    this.sendSe('respawn');
+
+    setTimeout(() => {
+      this.currentArea = 'sky';
+      this.sound.setBgmMode('default');
+      this.ui.hideSliderTimer();
+      this.player.setScene(this.scene);
+      if (this.remotePlayer) {
+        this.remotePlayer.setScene(this.scene);
+      }
+
+      const garden = this.world.gardenIsland;
+      const safePos = garden
+        ? garden.getSafeSpot(this.player.position, this.player.radius)
+        : new THREE.Vector3(48.4, 8.3, -47.2);
+
+      this.world.updateChunks(
+        safePos,
+        0.016,
+        this.gameMode === 'guest' && this.network.isConnected,
+        this.remoteHeartState,
+        this.remoteStarState,
+        this.remotePlayer && this.remoteArea === 'sky' ? this.remotePlayer.position : null
+      );
+
+      this._syncWingsButtonAndEquip();
+      this.player.facingYaw = 0;
+      this.player.resetTo(safePos);
+      this.player.safeCloud = null;
+      this.player.safeFallbackPos.copy(safePos);
+      this.camYaw = 0;
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch, -0.78, 1.15);
+      this.camLookTarget.set(safePos.x, safePos.y + 0.9, safePos.z);
+      this._updateCamera(1.0);
+      this.sendStatePacket();
+
+      this.ui.setRespawnFlash(false);
+      this.isAreaTransitioning = false;
+    }, 240);
+  }
+
   _enterMiniSkySlider() {
     if (this.isAreaTransitioning || this.currentArea === 'mini_skySlider') return;
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1035,6 +1164,7 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1069,6 +1199,7 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1107,6 +1238,7 @@ class MaimaiGame {
     this.isAreaTransitioning = true;
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
+    this._ridingGiantMaimai = null;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1152,6 +1284,7 @@ class MaimaiGame {
       this.remoteArea === 'mini_flyContest'
     ) return;
     this.ui.setRespawnFlash(true);
+    this._ridingGiantMaimai = null;
 
     if (this.remoteArea === 'castle') {
       this.currentArea = 'castle';
@@ -1166,6 +1299,22 @@ class MaimaiGame {
         Math.cos(ang) * clampedDist,
         Math.max(this.player.radius, rp.y + 0.8),
         Math.sin(ang) * clampedDist
+      );
+      this._syncWingsButtonAndEquip();
+      this.player.resetTo(target);
+      this.camLookTarget.set(target.x, target.y + 0.9, target.z);
+    } else if (this.remoteArea === 'giant_island') {
+      this.currentArea = 'giant_island';
+      this.sound.setBgmMode('default');
+      this.ui.hideSliderTimer();
+      this.player.setScene(this.giantIsland.scene);
+      this.remotePlayer.setScene(this.giantIsland.scene);
+      const rp = this.remotePlayer.position;
+      const groundY = this.giantIsland.getGroundHeightAt(rp.x, rp.z);
+      const target = new THREE.Vector3(
+        rp.x,
+        Math.max(groundY + this.player.radius + 0.5, rp.y + 1.5),
+        rp.z
       );
       this._syncWingsButtonAndEquip();
       this.player.resetTo(target);
@@ -1222,6 +1371,8 @@ class MaimaiGame {
     this.sound.setBgmMode('default');
     this.isAreaTransitioning = false;
     this.areaPortalCooldown = 0;
+    this._ridingGiantMaimai = null;
+    this.remoteGiantState = null;
 
     this._endBeanstalkCutscene(true);
     this.controls.reset();
@@ -1250,6 +1401,8 @@ class MaimaiGame {
     this.player.safeLocalOffset.set(0, 3.5, 0);
     this.player.safeFallbackPos.set(0, 4.5, 0);
     this.world.resetSessionCoins();
+    this.giantIsland.resetCoins();
+    this.giantIsland.resetMaimais();
     this.world.gardenIsland.setBeanstalkGrown(!!this.ownedItems.beanstalk_grown);
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
@@ -1271,6 +1424,8 @@ class MaimaiGame {
     this.sound.setBgmMode('default');
     this.isAreaTransitioning = false;
     this.areaPortalCooldown = 0;
+    this._ridingGiantMaimai = null;
+    this.remoteGiantState = null;
 
     this._endBeanstalkCutscene(true);
     this.isPlaying = false;
@@ -1294,6 +1449,8 @@ class MaimaiGame {
     this._syncWingsButtonAndEquip();
     this.player.resetTo(new THREE.Vector3(0, 4.5, 0));
     this.world.resetSessionCoins();
+    this.giantIsland.resetCoins();
+    this.giantIsland.resetMaimais();
     this.world.gardenIsland.setBeanstalkGrown(!!this.ownedItems.beanstalk_grown);
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
@@ -1312,6 +1469,9 @@ class MaimaiGame {
   _getCurrentShadowInfo(px, py, pz) {
     if (this.currentArea === 'castle') {
       return this.castleInterior.getShadowGroundInfo(px, py, pz);
+    }
+    if (this.currentArea === 'giant_island') {
+      return this.giantIsland.getShadowGroundInfo(px, py, pz);
     }
     if (this.currentArea === 'mini_skySlider') {
       return this.miniSkySlider.getShadowGroundInfo(px, py, pz);
@@ -1416,6 +1576,17 @@ class MaimaiGame {
         ? this.remotePlayer.position
         : this.world.castleIsland.position;
       this.world.updateChunks(refPos, dt, false, null, null, null);
+    }
+
+    // ホスト時はゲストだけがジャイアントアイランドにいる場合も巨大まいまいを更新して同期を送る
+    if (
+      this.currentArea !== 'giant_island' &&
+      this.gameMode === 'host' &&
+      this.network.isConnected &&
+      this.remotePlayer &&
+      this.remoteArea === 'giant_island'
+    ) {
+      this.giantIsland.update(dt, this.remotePlayer.position, false, null, this.sound, false);
     }
 
     // ミニゲーム「スカイスライダー」専用更新ループ
@@ -1548,6 +1719,7 @@ class MaimaiGame {
     this.camYaw -= camD.x * 0.0055;
     this.camPitch = THREE.MathUtils.clamp(this.camPitch + camD.y * 0.0045, minPitch, 1.15);
 
+    let giantRes = null;
     if (this.currentArea === 'sky') {
       this.world.updateChunks(
         this.player.position,
@@ -1556,6 +1728,15 @@ class MaimaiGame {
         this.remoteHeartState,
         this.remoteStarState,
         partnerHere ? this.remotePlayer.position : null
+      );
+    } else if (this.currentArea === 'giant_island') {
+      giantRes = this.giantIsland.update(
+        dt,
+        this.player.position,
+        this.gameMode === 'guest' && this.network.isConnected,
+        this.remoteGiantState,
+        this.sound,
+        !this.isRespawning && !this.isAreaTransitioning
       );
     }
 
@@ -1629,11 +1810,16 @@ class MaimaiGame {
       }
     }
 
+    // 巨大まいまいの頭に乗っている間の移動追従
+    if (this.currentArea === 'giant_island' && this.player.isGrounded && this._ridingGiantMaimai) {
+      this.player.position.add(this._ridingGiantMaimai.deltaPos);
+    }
+
     // 通常移動・物理処理
     if (!this.player.isRidingPartner) {
       const isGummyActive =
         !!this.ownedItems.superball_gummy &&
-        (this.currentArea === 'sky' || this.currentArea === 'castle');
+        (this.currentArea === 'sky' || this.currentArea === 'castle' || this.currentArea === 'giant_island');
 
       const moveRes = this.physics.stepMovement(
         this.player,
@@ -1660,6 +1846,7 @@ class MaimaiGame {
       const wasGrounded = this.player.isGrounded;
       this.player.isGrounded = false;
       this.player.groundCloud = null;
+      this._ridingGiantMaimai = null;
 
       if (this.currentArea === 'castle') {
         const hit = this.castleInterior.resolveCollisions(
@@ -1670,6 +1857,26 @@ class MaimaiGame {
         if (hit.hitGround) {
           this.player.isGrounded = true;
           this.player.airJumpsLeft = this.player.getMaxAirJumps();
+          if (!wasGrounded && hit.hardLandingVn < -4.5) {
+            this.player.triggerSquash(0.66);
+            this.player.setExpression('land', 0.25);
+            this.sound.playLand();
+            this.sendSe('land');
+          }
+        }
+      } else if (this.currentArea === 'giant_island') {
+        const hit = this.giantIsland.resolveCollisions(
+          this.player.position,
+          this.player.velocity,
+          this.player.radius,
+          wasGrounded,
+          this.sound,
+          (name) => this.sendSe(name)
+        );
+        if (hit.hitGround) {
+          this.player.isGrounded = true;
+          this.player.airJumpsLeft = this.player.getMaxAirJumps();
+          this._ridingGiantMaimai = hit.rodeMaimai || null;
           if (!wasGrounded && hit.hardLandingVn < -4.5) {
             this.player.triggerSquash(0.66);
             this.player.setExpression('land', 0.25);
@@ -1705,6 +1912,17 @@ class MaimaiGame {
         this.remotePlayer.position.z
       );
       this.remotePlayer.updateRemoteVisuals(0, rShadow, this.player.position);
+    }
+
+    if (this.currentArea === 'giant_island' && giantRes) {
+      if (giantRes.gotSky > 0) {
+        this.addSky(giantRes.gotSky);
+        this.sound.playCoin();
+        this.player.setExpression('happy', 0.45);
+      }
+      if (giantRes.fellOut && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
+        this._exitGiantIslandToWorld();
+      }
     }
 
     if (this.currentArea === 'sky') {
@@ -1929,10 +2147,12 @@ class MaimaiGame {
           this._enterMiniFlyContest();
         }
       }
-    } else if (!this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
+    } else if (this.currentArea === 'sky' && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
       const entranceArea = this.world.checkStructureEntrances(this.player.position);
       if (entranceArea === 'castle') {
         this._enterCastleInterior();
+      } else if (entranceArea === 'giant_island') {
+        this._enterGiantIsland();
       }
     }
 

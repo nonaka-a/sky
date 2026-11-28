@@ -772,6 +772,7 @@ class MaimaiGame {
           this.camLookTarget.set(spawnPos.x, spawnPos.y + 0.9, spawnPos.z);
         } else if (hostArea === 'giant_island') {
           this.currentArea = 'giant_island';
+          this.sound.setBgmMode('giant_island');
           this.ui.hideSliderTimer();
           this.player.setScene(this.giantIsland.scene);
           if (this.remotePlayer) this.remotePlayer.setScene(this.giantIsland.scene);
@@ -1045,7 +1046,7 @@ class MaimaiGame {
 
     setTimeout(() => {
       this.currentArea = 'giant_island';
-      this.sound.setBgmMode('default');
+      this.sound.setBgmMode('giant_island');
       this.ui.hideSliderTimer();
       this.player.setScene(this.giantIsland.scene);
       if (this.remotePlayer) {
@@ -1305,7 +1306,7 @@ class MaimaiGame {
       this.camLookTarget.set(target.x, target.y + 0.9, target.z);
     } else if (this.remoteArea === 'giant_island') {
       this.currentArea = 'giant_island';
-      this.sound.setBgmMode('default');
+      this.sound.setBgmMode('giant_island');
       this.ui.hideSliderTimer();
       this.player.setScene(this.giantIsland.scene);
       this.remotePlayer.setScene(this.giantIsland.scene);

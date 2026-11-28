@@ -51,8 +51,8 @@ class PhysicsSystem {
         } else if (jumpReleased || !isJumpHolding) {
           // タメを離した瞬間に大ジャンプ発動
           const baseVy = hasWings ? 13.8 : 14.5;
-          const chargeRatio = THREE.MathUtils.clamp(player.chargeTimer / 2.0, 0, 1);
-          const isMax = player.chargeTimer >= 2.0;
+          const chargeRatio = THREE.MathUtils.clamp(player.chargeTimer / 1.5, 0, 1);
+          const isMax = player.chargeTimer >= 1.5;
           const maxVy = hasWings ? 34.0 : 42.0;
 
           player.velocity.y = THREE.MathUtils.lerp(baseVy + 3.0, maxVy, chargeRatio);
@@ -73,10 +73,10 @@ class PhysicsSystem {
 
           player.clearJumpCharge();
         } else {
-          // タメ継続中（2.0秒でMAX）
-          player.chargeTimer = Math.min(2.0, player.chargeTimer + dt);
-          player.chargeRatio = player.chargeTimer / 2.0;
-          if (player.chargeTimer >= 2.0 && !player.chargeMaxAnnounced) {
+          // タメ継続中（1.5秒でMAX）
+          player.chargeTimer = Math.min(1.5, player.chargeTimer + dt);
+          player.chargeRatio = player.chargeTimer / 1.5;
+          if (player.chargeTimer >= 1.5 && !player.chargeMaxAnnounced) {
             player.chargeMaxAnnounced = true;
             sound.playGummyChargeMax();
             sendSeFn('gummy_ready');

@@ -8,7 +8,8 @@ class SoundManager {
     this.bgmDefs = {
       default: { url: 'sounds/BGM.mp3', volume: 0.42 },
       mini_skySlider: { url: 'sounds/mini_skySlider_BGM.mp3', volume: 0.26 },
-      mini_flyContest: { url: 'sounds/mini_fly_BGM.mp3', volume: 0.42 }
+      mini_flyContest: { url: 'sounds/mini_fly_BGM.mp3', volume: 0.42 },
+      giant_island: { url: 'sounds/BGM_giant.mp3', volume: 0.42 }
     };
     this.bgmBuffers = {};
     this.bgmLoadPromises = {};
@@ -19,6 +20,7 @@ class SoundManager {
     this.defaultBgmAudio = null;
     this.sliderBgmAudio = null;
     this.flyBgmAudio = null;
+    this.giantBgmAudio = null;
     this.fireworkFiles = [
       'sounds/firework.mp3',
       'sounds/firework_s.mp3',
@@ -51,6 +53,15 @@ class SoundManager {
       this.flyBgmAudio.volume = 0.42;
     }
     return this.flyBgmAudio;
+  }
+
+  _ensureGiantBgm() {
+    if (!this.giantBgmAudio && typeof Audio !== 'undefined') {
+      this.giantBgmAudio = new Audio('sounds/BGM_giant.mp3');
+      this.giantBgmAudio.loop = true;
+      this.giantBgmAudio.volume = 0.42;
+    }
+    return this.giantBgmAudio;
   }
 
   _loadBgmBuffer(mode) {
@@ -96,6 +107,7 @@ class SoundManager {
     this._loadBgmBuffer('default');
     this._loadBgmBuffer('mini_skySlider');
     this._loadBgmBuffer('mini_flyContest');
+    this._loadBgmBuffer('giant_island');
   }
 
   _stopCurrentWebAudioBgm() {
@@ -159,6 +171,14 @@ class SoundManager {
       }
       return;
     }
+    if (mode === 'giant_island') {
+      const audio = this._ensureGiantBgm();
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+      return;
+    }
     const defaultAudio = this._ensureDefaultBgm();
     if (defaultAudio && defaultAudio.paused) {
       defaultAudio.play().catch(() => {});
@@ -171,7 +191,9 @@ class SoundManager {
         ? 'mini_skySlider'
         : mode === 'mini_flyContest'
           ? 'mini_flyContest'
-          : 'default';
+          : mode === 'giant_island'
+            ? 'giant_island'
+            : 'default';
     if (this.bgmMode === nextMode) return;
     this.bgmMode = nextMode;
     if (this.isPlayingBgm && this.enabled) {
@@ -429,6 +451,10 @@ class SoundManager {
     if (this.flyBgmAudio) {
       this.flyBgmAudio.pause();
       this.flyBgmAudio.currentTime = 0;
+    }
+    if (this.giantBgmAudio) {
+      this.giantBgmAudio.pause();
+      this.giantBgmAudio.currentTime = 0;
     }
   }
 }

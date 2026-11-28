@@ -1156,11 +1156,29 @@ class GiantIsland {
   }
 
   getStartPosition(playerRadius = 0.6) {
-    // 豆の木にカメラが被らず、かつ近くに見える位置へ降ろす
-    const sx = this.beanstalkCenter.x + 21.5;
-    const sz = this.beanstalkCenter.z - 6.0;
+    // 島の端側の着地位置
+    const sx = -28.0;
+    const sz = 45.5;
     const gy = this.getGroundHeightAt(sx, sz);
-    return new THREE.Vector3(sx, gy + playerRadius + 2.2, sz);
+    return new THREE.Vector3(sx, gy + playerRadius, sz);
+  }
+
+  getIntroJumpInfo(playerRadius = 0.6) {
+    const landPos = this.getStartPosition(playerRadius);
+    const r = Math.hypot(landPos.x, landPos.z) || 1;
+    const inX = -landPos.x / r;
+    const inZ = -landPos.z / r;
+    const startPos = new THREE.Vector3(
+      landPos.x - inX * 15.5,
+      -12.0,
+      landPos.z - inZ * 15.5
+    );
+    return {
+      startPos,
+      landPos,
+      duration: 1.35,
+      gravity: 52.0
+    };
   }
 
   resetCoins() {

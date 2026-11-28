@@ -30,6 +30,17 @@ class MaimaiGame {
     // 巨大まいまい乗り状態
     this._ridingGiantMaimai = null;
 
+    // 巨人島への飛び込みジャンプ演出状態
+    this.giantIntro = {
+      active: false,
+      timer: 0,
+      duration: 1.35,
+      gravity: 52.0,
+      vy0: 0,
+      startPos: new THREE.Vector3(),
+      landPos: new THREE.Vector3()
+    };
+
     // NPCふれあい状態
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
@@ -944,6 +955,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -980,6 +992,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1036,6 +1049,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.isPinkAsking = false;
     this.isStarAsking = false;
     this.isShopAsking = false;
@@ -1054,14 +1068,37 @@ class MaimaiGame {
       }
 
       this._syncWingsButtonAndEquip();
-      const startPos = this.giantIsland.getStartPosition(this.player.radius);
-      const lookYaw = Math.atan2(-startPos.x, -startPos.z);
-      this.player.facingYaw = lookYaw;
-      this.player.resetTo(startPos);
-      this.player.velocity.set(0, -1.5, 0);
-      this.camYaw = Math.atan2(startPos.x, startPos.z);
-      this.camPitch = -0.14;
-      this.camLookTarget.set(startPos.x, startPos.y + 0.9, startPos.z);
+      const intro = this.giantIsland.getIntroJumpInfo(this.player.radius);
+      const dy = intro.landPos.y - intro.startPos.y;
+      const vy0 = (dy + 0.5 * intro.gravity * intro.duration * intro.duration) / intro.duration;
+
+      this.giantIntro = {
+        active: true,
+        timer: 0,
+        duration: intro.duration,
+        gravity: intro.gravity,
+        vy0,
+        startPos: intro.startPos.clone(),
+        landPos: intro.landPos.clone()
+      };
+
+      const vx = (intro.landPos.x - intro.startPos.x) / intro.duration;
+      const vz = (intro.landPos.z - intro.startPos.z) / intro.duration;
+      this.player.facingYaw = Math.atan2(vx, vz);
+      this.player.resetTo(intro.startPos);
+      this.player.velocity.set(vx, vy0, vz);
+      this.player.isGrounded = false;
+      this.player.triggerSquash(1.38);
+      this.player.setExpression('jump', 0.8);
+      if (this.player.hasWingsEquipped) {
+        this.player.triggerWingFlap();
+      }
+      this.sound.playJump();
+      this.sendSe('jump');
+
+      this.camYaw = Math.atan2(intro.landPos.x, intro.landPos.z);
+      this.camPitch = -0.12;
+      this.camLookTarget.set(intro.startPos.x, intro.startPos.y + 0.9, intro.startPos.z);
       this._updateCamera(1.0);
       this.sendStatePacket();
 
@@ -1076,6 +1113,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.4;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1129,6 +1167,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1170,6 +1209,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1205,6 +1245,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1244,6 +1285,7 @@ class MaimaiGame {
     this.areaPortalCooldown = 1.2;
     this.player.isRidingPartner = false;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.ui.setRespawnFlash(true);
     this.sound.playRespawn();
     this.sendSe('respawn');
@@ -1290,6 +1332,7 @@ class MaimaiGame {
     ) return;
     this.ui.setRespawnFlash(true);
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
 
     if (this.remoteArea === 'castle') {
       this.currentArea = 'castle';
@@ -1377,6 +1420,7 @@ class MaimaiGame {
     this.isAreaTransitioning = false;
     this.areaPortalCooldown = 0;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.remoteGiantState = null;
 
     this._endBeanstalkCutscene(true);
@@ -1430,6 +1474,7 @@ class MaimaiGame {
     this.isAreaTransitioning = false;
     this.areaPortalCooldown = 0;
     this._ridingGiantMaimai = null;
+    this.giantIntro.active = false;
     this.remoteGiantState = null;
 
     this._endBeanstalkCutscene(true);
@@ -1741,7 +1786,7 @@ class MaimaiGame {
         this.gameMode === 'guest' && this.network.isConnected,
         this.remoteGiantState,
         this.sound,
-        !this.isRespawning && !this.isAreaTransitioning
+        !this.isRespawning && !this.isAreaTransitioning && !this.giantIntro.active
       );
     }
 
@@ -1774,139 +1819,179 @@ class MaimaiGame {
     const jumpPressed = this.controls.consumeJump();
     const jumpReleased = this.controls.consumeJumpRelease();
     const isJumpHolding = this.controls.isJumpHolding();
-    if (jumpPressed) {
-      this.player.jumpBufferTimer = 0.14;
-    } else if (this.player.jumpBufferTimer > 0) {
-      this.player.jumpBufferTimer -= dt;
-    }
 
-    // 仲間の頭に乗っている間の固定処理
-    if (this.player.isRidingPartner && partnerHere) {
+    if (this.currentArea === 'giant_island' && this.giantIntro.active) {
+      // 島の外から放物線を描いて着地するイントロジャンプ演出
+      this.player.jumpBufferTimer = 0;
       this.player.clearJumpCharge();
-      if (this.player.jumpBufferTimer > 0) {
-        this.player.isRidingPartner = false;
-        this.physics.setRideCooldown(0.28);
-        this.player.velocity.y = this.player.hasWingsEquipped ? 13.8 : 14.5;
+
+      this.giantIntro.timer += dt;
+      const gi = this.giantIntro;
+      const rawT = Math.min(1.0, gi.timer / gi.duration);
+      const elapsed = rawT * gi.duration;
+
+      const x = THREE.MathUtils.lerp(gi.startPos.x, gi.landPos.x, rawT);
+      const z = THREE.MathUtils.lerp(gi.startPos.z, gi.landPos.z, rawT);
+      const y = gi.startPos.y + gi.vy0 * elapsed - 0.5 * gi.gravity * elapsed * elapsed;
+      const vy = gi.vy0 - gi.gravity * elapsed;
+      const vx = (gi.landPos.x - gi.startPos.x) / gi.duration;
+      const vz = (gi.landPos.z - gi.startPos.z) / gi.duration;
+
+      this.player.position.set(x, y, z);
+      this.player.velocity.set(vx, vy, vz);
+      this.player.isGrounded = false;
+      if (vy < -2.0) {
+        this.player.setExpression('fall');
+      } else {
+        this.player.setExpression('jump');
+      }
+
+      if (rawT >= 1.0) {
+        this.giantIntro.active = false;
+        this.player.position.copy(gi.landPos);
+        this.player.velocity.set(vx * 0.25, 0, vz * 0.25);
+        this.player.isGrounded = true;
+        this.player.airJumpsLeft = this.player.getMaxAirJumps();
+        this.player.triggerSquash(0.66);
+        this.player.setExpression('land', 0.28);
+        this.sound.playLand();
+        this.sendSe('land');
+      }
+    } else {
+      if (jumpPressed) {
+        this.player.jumpBufferTimer = 0.14;
+      } else if (this.player.jumpBufferTimer > 0) {
+        this.player.jumpBufferTimer -= dt;
+      }
+
+      // 仲間の頭に乗っている間の固定処理
+      if (this.player.isRidingPartner && partnerHere) {
+        this.player.clearJumpCharge();
+        if (this.player.jumpBufferTimer > 0) {
+          this.player.isRidingPartner = false;
+          this.physics.setRideCooldown(0.28);
+          this.player.velocity.y = this.player.hasWingsEquipped ? 13.8 : 14.5;
+          this.player.isGrounded = false;
+          this.player.groundCloud = null;
+          this.player.airJumpsLeft = this.player.getMaxAirJumps();
+          this.player.jumpBufferTimer = 0;
+          this.player.coyoteTimer = 0;
+          this.player.triggerSquash(1.38);
+          this.player.setExpression('jump', 0.4);
+          if (this.player.hasWingsEquipped) {
+            this.player.triggerWingFlap();
+            this.sound.playWingFlap();
+            this.sendSe('wing');
+          } else {
+            this.sound.playJump();
+            this.sendSe('jump');
+          }
+        } else if (inputMag > 0.06) {
+          this.player.isRidingPartner = false;
+          this.physics.setRideCooldown(0.28);
+        } else {
+          const rp = this.remotePlayer.position;
+          this.player.position.set(rp.x, rp.y + this.player.radius + this.remotePlayer.radius - 0.04, rp.z);
+          this.player.velocity.set(0, 0, 0);
+          this.player.isGrounded = true;
+          this.player.coyoteTimer = 0.12;
+          this.player.airJumpsLeft = this.player.getMaxAirJumps();
+        }
+      }
+
+      // 巨大まいまいの頭に乗っている間の移動追従
+      if (this.currentArea === 'giant_island' && this.player.isGrounded && this._ridingGiantMaimai) {
+        this.player.position.add(this._ridingGiantMaimai.deltaPos);
+      }
+
+      // 通常移動・物理処理
+      if (!this.player.isRidingPartner) {
+        const isGummyActive =
+          !!this.ownedItems.superball_gummy &&
+          (this.currentArea === 'sky' || this.currentArea === 'castle' || this.currentArea === 'giant_island');
+
+        const moveRes = this.physics.stepMovement(
+          this.player,
+          move,
+          inputMag,
+          this.camYaw,
+          dt,
+          this.sound,
+          (name) => this.sendSe(name),
+          this.currentArea === 'sky',
+          {
+            enabled: isGummyActive,
+            isJumpHolding,
+            jumpReleased
+          }
+        );
+        if (moveRes && moveRes.didDoubleJump && this.network.isConnected) {
+          this.network.send({ type: 'dj' });
+        }
+        if (moveRes && moveRes.superJumpType && this.network.isConnected) {
+          this.network.send({ type: 'sj', max: moveRes.superJumpType === 'max' ? 1 : 0 });
+        }
+
+        const wasGrounded = this.player.isGrounded;
         this.player.isGrounded = false;
         this.player.groundCloud = null;
-        this.player.airJumpsLeft = this.player.getMaxAirJumps();
-        this.player.jumpBufferTimer = 0;
-        this.player.coyoteTimer = 0;
-        this.player.triggerSquash(1.38);
-        this.player.setExpression('jump', 0.4);
-        if (this.player.hasWingsEquipped) {
-          this.player.triggerWingFlap();
-          this.sound.playWingFlap();
-          this.sendSe('wing');
+        this._ridingGiantMaimai = null;
+
+        if (this.currentArea === 'castle') {
+          const hit = this.castleInterior.resolveCollisions(
+            this.player.position,
+            this.player.velocity,
+            this.player.radius
+          );
+          if (hit.hitGround) {
+            this.player.isGrounded = true;
+            this.player.airJumpsLeft = this.player.getMaxAirJumps();
+            if (!wasGrounded && hit.hardLandingVn < -4.5) {
+              this.player.triggerSquash(0.66);
+              this.player.setExpression('land', 0.25);
+              this.sound.playLand();
+              this.sendSe('land');
+            }
+          }
+        } else if (this.currentArea === 'giant_island') {
+          const hit = this.giantIsland.resolveCollisions(
+            this.player.position,
+            this.player.velocity,
+            this.player.radius,
+            wasGrounded,
+            this.sound,
+            (name) => this.sendSe(name)
+          );
+          if (hit.hitGround) {
+            this.player.isGrounded = true;
+            this.player.airJumpsLeft = this.player.getMaxAirJumps();
+            this._ridingGiantMaimai = hit.rodeMaimai || null;
+            if (!wasGrounded && hit.hardLandingVn < -4.5) {
+              this.player.triggerSquash(0.66);
+              this.player.setExpression('land', 0.25);
+              this.sound.playLand();
+              this.sendSe('land');
+            }
+          }
         } else {
-          this.sound.playJump();
-          this.sendSe('jump');
+          this.physics.resolveWorldCollisions(
+            this.player,
+            this.world,
+            this.sound,
+            (name) => this.sendSe(name),
+            wasGrounded
+          );
         }
-      } else if (inputMag > 0.06) {
-        this.player.isRidingPartner = false;
-        this.physics.setRideCooldown(0.28);
-      } else {
-        const rp = this.remotePlayer.position;
-        this.player.position.set(rp.x, rp.y + this.player.radius + this.remotePlayer.radius - 0.04, rp.z);
-        this.player.velocity.set(0, 0, 0);
-        this.player.isGrounded = true;
-        this.player.coyoteTimer = 0.12;
-        this.player.airJumpsLeft = this.player.getMaxAirJumps();
-      }
-    }
 
-    // 巨大まいまいの頭に乗っている間の移動追従
-    if (this.currentArea === 'giant_island' && this.player.isGrounded && this._ridingGiantMaimai) {
-      this.player.position.add(this._ridingGiantMaimai.deltaPos);
-    }
-
-    // 通常移動・物理処理
-    if (!this.player.isRidingPartner) {
-      const isGummyActive =
-        !!this.ownedItems.superball_gummy &&
-        (this.currentArea === 'sky' || this.currentArea === 'castle' || this.currentArea === 'giant_island');
-
-      const moveRes = this.physics.stepMovement(
-        this.player,
-        move,
-        inputMag,
-        this.camYaw,
-        dt,
-        this.sound,
-        (name) => this.sendSe(name),
-        this.currentArea === 'sky',
-        {
-          enabled: isGummyActive,
-          isJumpHolding,
-          jumpReleased
+        if (partnerHere) {
+          this.physics.resolvePlayerInteraction(
+            this.player,
+            this.remotePlayer,
+            this.sound,
+            (name) => this.sendSe(name),
+            wasGrounded
+          );
         }
-      );
-      if (moveRes && moveRes.didDoubleJump && this.network.isConnected) {
-        this.network.send({ type: 'dj' });
-      }
-      if (moveRes && moveRes.superJumpType && this.network.isConnected) {
-        this.network.send({ type: 'sj', max: moveRes.superJumpType === 'max' ? 1 : 0 });
-      }
-
-      const wasGrounded = this.player.isGrounded;
-      this.player.isGrounded = false;
-      this.player.groundCloud = null;
-      this._ridingGiantMaimai = null;
-
-      if (this.currentArea === 'castle') {
-        const hit = this.castleInterior.resolveCollisions(
-          this.player.position,
-          this.player.velocity,
-          this.player.radius
-        );
-        if (hit.hitGround) {
-          this.player.isGrounded = true;
-          this.player.airJumpsLeft = this.player.getMaxAirJumps();
-          if (!wasGrounded && hit.hardLandingVn < -4.5) {
-            this.player.triggerSquash(0.66);
-            this.player.setExpression('land', 0.25);
-            this.sound.playLand();
-            this.sendSe('land');
-          }
-        }
-      } else if (this.currentArea === 'giant_island') {
-        const hit = this.giantIsland.resolveCollisions(
-          this.player.position,
-          this.player.velocity,
-          this.player.radius,
-          wasGrounded,
-          this.sound,
-          (name) => this.sendSe(name)
-        );
-        if (hit.hitGround) {
-          this.player.isGrounded = true;
-          this.player.airJumpsLeft = this.player.getMaxAirJumps();
-          this._ridingGiantMaimai = hit.rodeMaimai || null;
-          if (!wasGrounded && hit.hardLandingVn < -4.5) {
-            this.player.triggerSquash(0.66);
-            this.player.setExpression('land', 0.25);
-            this.sound.playLand();
-            this.sendSe('land');
-          }
-        }
-      } else {
-        this.physics.resolveWorldCollisions(
-          this.player,
-          this.world,
-          this.sound,
-          (name) => this.sendSe(name),
-          wasGrounded
-        );
-      }
-
-      if (partnerHere) {
-        this.physics.resolvePlayerInteraction(
-          this.player,
-          this.remotePlayer,
-          this.sound,
-          (name) => this.sendSe(name),
-          wasGrounded
-        );
       }
     }
 
@@ -1925,7 +2010,7 @@ class MaimaiGame {
         this.sound.playCoin();
         this.player.setExpression('happy', 0.45);
       }
-      if (giantRes.fellOut && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
+      if (!this.giantIntro.active && giantRes.fellOut && !this.isAreaTransitioning && this.areaPortalCooldown <= 0) {
         this._exitGiantIslandToWorld();
       }
     }

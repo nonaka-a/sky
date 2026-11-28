@@ -15,6 +15,7 @@ class UIManager {
     this.dialogueAvatarHeart = document.getElementById('dialogue-avatar-heart');
     this.dialogueAvatarStar = document.getElementById('dialogue-avatar-star');
     this.dialogueAvatarPurple = document.getElementById('dialogue-avatar-purple');
+    this.dialogueAvatarPink = document.getElementById('dialogue-avatar-pink');
     this.dialogueAvatarAngel = document.getElementById('dialogue-avatar-angel');
     this.dialogueChoices = document.getElementById('dialogue-choices');
     this.btnDialogueYes = document.getElementById('btn-dialogue-yes');
@@ -46,6 +47,8 @@ class UIManager {
     this.btnBuyWings = document.getElementById('btn-buy-wings');
     this.shopItemGummyCard = document.getElementById('shop-item-gummy');
     this.btnBuyGummy = document.getElementById('btn-buy-gummy');
+    this.shopItemSeedCard = document.getElementById('shop-item-seed');
+    this.btnBuySeed = document.getElementById('btn-buy-seed');
 
     this.localBubble = document.getElementById('local-chat-bubble');
     this.localBubbleText = document.getElementById('local-chat-bubble-text');
@@ -212,6 +215,13 @@ class UIManager {
       this.btnBuyGummy.addEventListener('click', (e) => {
         e.currentTarget.blur();
         game.buySuperballGummy();
+      });
+    }
+
+    if (this.btnBuySeed) {
+      this.btnBuySeed.addEventListener('click', (e) => {
+        e.currentTarget.blur();
+        game.buyMagicSeed();
       });
     }
 
@@ -500,6 +510,7 @@ class UIManager {
     const game = this.game;
     const owned = !!game.ownedItems.angel_wings;
     const gummyOwned = !!game.ownedItems.superball_gummy;
+    const seedOwned = !!game.ownedItems.magic_seed;
     if (this.shopSkyBalanceEl) {
       this.shopSkyBalanceEl.textContent = String(game.skyCount);
     }
@@ -521,6 +532,16 @@ class UIManager {
       const span = this.btnBuyGummy.querySelector('span');
       if (span) {
         span.textContent = gummyOwned ? 'かったよ' : '150 スカイ';
+      }
+    }
+    if (this.shopItemSeedCard) {
+      this.shopItemSeedCard.classList.toggle('owned', seedOwned);
+    }
+    if (this.btnBuySeed) {
+      this.btnBuySeed.disabled = seedOwned;
+      const span = this.btnBuySeed.querySelector('span');
+      if (span) {
+        span.textContent = seedOwned ? 'かったよ' : '200 スカイ';
       }
     }
   }
@@ -598,16 +619,21 @@ class UIManager {
   showDialogue(message, duration = 4.5, speaker = 'heart', showChoices = false, yesText = 'うん', noText = 'またこんど') {
     const isStar = speaker === 'star';
     const isPurple = speaker === 'purple';
+    const isPink = speaker === 'pink';
     const isAngel = speaker === 'angel';
     this.dialogueBox.classList.toggle('star', isStar);
     this.dialogueBox.classList.toggle('purple', isPurple);
+    this.dialogueBox.classList.toggle('pink', isPink);
     this.dialogueBox.classList.toggle('angel', isAngel);
     this.dialogueSpeaker.textContent = isStar
       ? 'スターくん'
-      : (isPurple ? 'むらさきまいまい' : (isAngel ? 'おみせの天使' : 'ハートちゃん'));
-    this.dialogueAvatarHeart.classList.toggle('hidden', isStar || isPurple || isAngel);
+      : (isPurple
+          ? 'むらさきまいまい'
+          : (isPink ? 'ピンクまいまい' : (isAngel ? 'おみせの天使' : 'ハートちゃん')));
+    this.dialogueAvatarHeart.classList.toggle('hidden', isStar || isPurple || isPink || isAngel);
     this.dialogueAvatarStar.classList.toggle('hidden', !isStar);
     this.dialogueAvatarPurple.classList.toggle('hidden', !isPurple);
+    this.dialogueAvatarPink.classList.toggle('hidden', !isPink);
     this.dialogueAvatarAngel.classList.toggle('hidden', !isAngel);
     this.dialogueText.textContent = message;
     this.btnDialogueYes.textContent = yesText;

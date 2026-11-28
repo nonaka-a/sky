@@ -45,6 +45,9 @@ class SkyWorld {
     // お城の浮島（スタート地点正面から見える位置に常駐）
     this.castleIsland = this.addStructure(new CastleIsland(new THREE.Vector3(0, 3.5, -74)));
 
+    // スタート地点北東の花壇浮島（常駐）
+    this.gardenIsland = this.addStructure(new GardenIsland(new THREE.Vector3(52, 6.5, -52)));
+
     // スタート地点左前方のお店（常駐）
     this.shopIsland = this.addStructure(
       new ShopIsland(new THREE.Vector3(-27, 1.8, -26), this.scene, { yaw: 0.68 })
@@ -88,7 +91,7 @@ class SkyWorld {
     // セッション1回限りの硬貨（噴水の水の上・お城の屋根・入道雲の最初の階段）を生成
     this._initSessionCoins();
 
-    // ワールドに1人だけのハートちゃんとスターくんとむらさきまいまいを生成
+    // ワールドに1人だけのハートちゃんとスターくんとむらさきまいまいとピンクまいまいを生成
     this.heartBuddy = new HeartBuddy(new THREE.Vector3(16, 5.5, -42));
     this.scene.add(this.heartBuddy.group);
 
@@ -105,6 +108,11 @@ class SkyWorld {
     this.purpleBuddy = new PurpleMaimaiBuddy(purpleAnchor);
     this.scene.add(this.purpleBuddy.group);
     this.scene.add(this.purpleBuddy.dropShadow);
+
+    const pinkAnchor = this.gardenIsland.getPinkBuddyAnchor(0.6);
+    this.pinkBuddy = new PinkMaimaiBuddy(pinkAnchor.position, pinkAnchor.lookTarget);
+    this.scene.add(this.pinkBuddy.group);
+    this.scene.add(this.pinkBuddy.dropShadow);
 
     // モブの天使（計10体：お城の島に1体＋周囲の雲に9体）
     this.angels = [];
@@ -749,6 +757,8 @@ class SkyWorld {
           isFrontSide = c.basePos.z < stPos.z - 6.0;
         } else if (st.id === 'shop') {
           isFrontSide = c.basePos.z > stPos.z + 5.0 && c.basePos.x > stPos.x + 2.0;
+        } else if (st.id === 'garden') {
+          isFrontSide = c.basePos.z > stPos.z + 4.0 && c.basePos.x < stPos.x - 4.0;
         } else {
           isFrontSide = c.basePos.z > stPos.z + 6.0;
         }
@@ -932,6 +942,7 @@ class SkyWorld {
     }
 
     this.purpleBuddy.update(this.time, dt, playerPos);
+    this.pinkBuddy.update(this.time, dt, playerPos);
     this._updateAngels(dt, playerPos);
   }
 
@@ -1059,6 +1070,8 @@ class SkyWorld {
     } else {
       if (gx === 0 && gz === 2) {
         chunkClouds.push(this._createCloud(0, 0.8, 108, 'island', 91, false));
+      } else if (gx === 1 && gz === -1) {
+        chunkClouds.push(this._createCloud(32, 1.5, -34, 'island', 92, false));
       }
 
       const count = 5 + Math.floor(this._hash(gx, gz, 1) * 3);
@@ -1071,6 +1084,9 @@ class SkyWorld {
         const wz = gz * this.chunkSize + rz;
 
         if (gx === 0 && gz === 2 && Math.hypot(wx, wz - 108) < 16) {
+          continue;
+        }
+        if (gx === 1 && gz === -1 && Math.hypot(wx - 32, wz + 34) < 15) {
           continue;
         }
 

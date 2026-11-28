@@ -30,6 +30,7 @@ class MaimaiGame {
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
     this.isTouchingPurple = false;
+    this.isTouchingPink = false;
     this.isStarAsking = false;
 
     // スカイスライダー用カメラオフセット
@@ -229,6 +230,26 @@ class MaimaiGame {
     this.ui.refreshShopUI();
     this.sound.playBuy();
     this.ui.showToast('「スーパーボールグミ」をかったよ！', 3.0);
+  }
+
+  buyMagicSeed() {
+    if (this.ownedItems.magic_seed) return;
+    const price = 200;
+    if (this.skyCount < price) {
+      this.sound.playClick();
+      this.ui.showToast('スカイがたりないよ！', 2.2);
+      return;
+    }
+
+    this.skyCount -= price;
+    this._saveSkyCount();
+    this.ownedItems.magic_seed = true;
+    this._saveOwnedItems();
+
+    this.ui.updateSkyCount(this.skyCount, true);
+    this.ui.refreshShopUI();
+    this.sound.playBuy();
+    this.ui.showToast('「まほうのタネ」をかったよ！', 3.0);
   }
 
   _updateWarpPartnerVisibility() {
@@ -826,6 +847,7 @@ class MaimaiGame {
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
     this.isTouchingPurple = false;
+    this.isTouchingPink = false;
     // お店のカウンター前判定（セリフ表示後、3秒経ったら購入ウィンドウを開く）
       const atCounter = this.world.shopIsland && this.world.shopIsland.isPlayerAtCounter(this.player.position);
       if (atCounter) {
@@ -871,6 +893,7 @@ class MaimaiGame {
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
     this.world.purpleBuddy.reset();
+    this.world.pinkBuddy.reset();
     this.camYaw = 0;
     this.camPitch = 0.36;
 
@@ -896,6 +919,7 @@ class MaimaiGame {
     this.isTouchingHeart = false;
     this.isTouchingStar = false;
     this.isTouchingPurple = false;
+    this.isTouchingPink = false;
     this.isStarAsking = false;
     this.isAtShopCounter = false;
     this.wingsDesired = false;
@@ -909,6 +933,7 @@ class MaimaiGame {
     this.world.heartBuddy.reset();
     this.world.starBuddy.reset();
     this.world.purpleBuddy.reset();
+    this.world.pinkBuddy.reset();
   }
 
   onResize() {
@@ -1380,6 +1405,27 @@ class MaimaiGame {
         }
       } else if (purpleDist > 4.4) {
         this.isTouchingPurple = false;
+      }
+
+      const pinkDist = this.player.position.distanceTo(this.world.pinkBuddy.anchorPos);
+      if (pinkDist < 2.6) {
+        if (!this.isTouchingPink) {
+          this.isTouchingPink = true;
+          this.isStarAsking = false;
+          this.world.starBuddy.cancelAsking();
+          this.world.pinkBuddy.setExpression('happy', 4.5);
+          this.player.setExpression('happy', 1.4);
+          this.sound.playHeartGreet();
+          this.sendSe('heart');
+          this.ui.showDialogue(
+            'ここ、何かしょくぶつを育てられそうだよね、なにかちょうどよいタネはないかしら？',
+            5.5,
+            'pink',
+            false
+          );
+        }
+      } else if (pinkDist > 4.4) {
+        this.isTouchingPink = false;
       }
 
       const starDist = this.player.position.distanceTo(this.world.starBuddy.position);

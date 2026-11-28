@@ -1090,12 +1090,14 @@ class MaimaiGame {
       }
 
       const garden = this.world.gardenIsland;
-      const safePos = garden
+      const groundPos = garden
         ? garden.getSafeSpot(this.player.position, this.player.radius)
         : new THREE.Vector3(48.4, 8.3, -47.2);
+      const dropPos = groundPos.clone();
+      dropPos.y += 15.0;
 
       this.world.updateChunks(
-        safePos,
+        groundPos,
         0.016,
         this.gameMode === 'guest' && this.network.isConnected,
         this.remoteHeartState,
@@ -1105,12 +1107,14 @@ class MaimaiGame {
 
       this._syncWingsButtonAndEquip();
       this.player.facingYaw = 0;
-      this.player.resetTo(safePos);
+      this.player.resetTo(dropPos);
+      this.player.velocity.set(0, -6.0, 0);
+      this.player.setExpression('fall', 0.7);
       this.player.safeCloud = null;
-      this.player.safeFallbackPos.copy(safePos);
+      this.player.safeFallbackPos.copy(groundPos);
       this.camYaw = 0;
-      this.camPitch = THREE.MathUtils.clamp(this.camPitch, -0.78, 1.15);
-      this.camLookTarget.set(safePos.x, safePos.y + 0.9, safePos.z);
+      this.camPitch = 0.36;
+      this.camLookTarget.set(dropPos.x, dropPos.y + 0.9, dropPos.z);
       this._updateCamera(1.0);
       this.sendStatePacket();
 

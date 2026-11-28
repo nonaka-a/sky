@@ -357,6 +357,28 @@ class SoundManager {
     audio.play().catch(() => {});
   }
 
+  playSeedThrow() {
+    this.init();
+    this.playTone(480, 920, 0.16, 'sine', 0.14, 0);
+    this.playTone(760, 520, 0.12, 'triangle', 0.1, 0.14);
+  }
+
+  playSurprise() {
+    this.init();
+    this.playTone(587.33, 1046.5, 0.14, 'triangle', 0.14, 0);
+    this.playTone(1046.5, 1318.51, 0.16, 'sine', 0.12, 0.06);
+  }
+
+  playBeanstalkRumble() {
+    this.init();
+    if (!this.enabled || !this.ctx) return;
+    this.playTone(92, 64, 1.4, 'sawtooth', 0.11, 0);
+    this.playTone(72, 138, 2.2, 'triangle', 0.12, 0.35);
+    this.playTone(196, 392, 1.8, 'sine', 0.08, 0.8);
+    this.playTone(293.66, 587.33, 1.6, 'triangle', 0.08, 1.3);
+    this.playTone(392, 783.99, 1.5, 'sine', 0.09, 1.8);
+  }
+
   startBgm() {
     if (!this.enabled) return;
     this.init();

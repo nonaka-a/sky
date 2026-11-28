@@ -1433,6 +1433,13 @@ class PinkMaimaiBuddy {
     this.facingYaw = this.baseYaw;
     this.squashY = 1.0;
 
+    this.cutsceneActive = false;
+    this.cutscenePos = anchorPos.clone();
+    this.cutsceneYaw = this.baseYaw;
+    this.cutscenePitch = 0;
+    this.cutsceneHopY = 0;
+    this.cutsceneSquash = 1.0;
+
     this.expression = 'normal';
     this.exprTimer = 0;
     this.blinkTimer = 2.4;
@@ -1448,11 +1455,48 @@ class PinkMaimaiBuddy {
   }
 
   reset() {
+    this.cutsceneActive = false;
+    this.cutscenePitch = 0;
+    this.cutsceneHopY = 0;
+    this.cutsceneSquash = 1.0;
     this.facingYaw = this.baseYaw;
     this.squashY = 1.0;
+    this.bodyPivot.rotation.x = 0;
     this.group.position.copy(this.anchorPos);
     this.group.rotation.y = this.facingYaw;
+    this.dropShadow.position.set(
+      this.anchorPos.x,
+      this.anchorPos.y - this.radius + 0.04,
+      this.anchorPos.z
+    );
+    this.dropShadow.scale.setScalar(1.0);
     this.setExpression('normal');
+  }
+
+  setCutscenePose(pos, yaw, pitch = 0, hopY = 0, squashY = 1.0) {
+    this.cutsceneActive = true;
+    this.cutscenePos.copy(pos);
+    this.cutsceneYaw = yaw;
+    this.cutscenePitch = pitch;
+    this.cutsceneHopY = hopY;
+    this.cutsceneSquash = squashY;
+  }
+
+  clearCutscenePose() {
+    this.cutsceneActive = false;
+    this.cutscenePitch = 0;
+    this.cutsceneHopY = 0;
+    this.cutsceneSquash = 1.0;
+    this.bodyPivot.rotation.x = 0;
+    this.facingYaw = this.baseYaw;
+    this.group.position.copy(this.anchorPos);
+    this.group.rotation.y = this.facingYaw;
+    this.dropShadow.position.set(
+      this.anchorPos.x,
+      this.anchorPos.y - this.radius + 0.04,
+      this.anchorPos.z
+    );
+    this.dropShadow.scale.setScalar(1.0);
   }
 
   _createVisuals() {
@@ -1515,7 +1559,7 @@ class PinkMaimaiBuddy {
     const eyeY = cy - 24;
     const eyeOffsetX = 48;
 
-    if (blinking) {
+    if (blinking && expr !== 'surprised') {
       ctx.strokeStyle = '#3d0c22';
       ctx.lineWidth = 9;
       ctx.lineCap = 'round';
@@ -1528,7 +1572,7 @@ class PinkMaimaiBuddy {
       [-1, 1].forEach((side) => {
         const ex = cx + side * eyeOffsetX;
         const ey = eyeY;
-        const eyeRadius = 22;
+        const eyeRadius = expr === 'surprised' ? 25 : 22;
 
         const eyeGrad = ctx.createLinearGradient(ex, ey - eyeRadius, ex, ey + eyeRadius);
         eyeGrad.addColorStop(0, '#260615');
@@ -1542,7 +1586,7 @@ class PinkMaimaiBuddy {
 
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(ex - 7, ey - 8, 7, 0, Math.PI * 2);
+        ctx.arc(ex - 7, ey - 8, expr === 'surprised' ? 8.5 : 7, 0, Math.PI * 2);
         ctx.fill();
 
         if (expr === 'happy') {
@@ -1559,26 +1603,34 @@ class PinkMaimaiBuddy {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
-    const mouthW = expr === 'happy' ? 64 : 56;
-    const mouthH = expr === 'happy' ? 38 : 30;
+    if (expr === 'surprised') {
+      ctx.fillStyle = '#7a1941';
+      ctx.beginPath();
+      ctx.arc(cx, mouthY + 20, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      const mouthW = expr === 'happy' ? 64 : 56;
+      const mouthH = expr === 'happy' ? 38 : 30;
 
-    ctx.fillStyle = '#7a1941';
-    ctx.beginPath();
-    ctx.moveTo(cx - mouthW, mouthY);
-    ctx.quadraticCurveTo(cx, mouthY + 10, cx + mouthW, mouthY);
-    ctx.quadraticCurveTo(cx + mouthW * 0.75, mouthY + mouthH * 1.4, cx, mouthY + mouthH * 1.4);
-    ctx.quadraticCurveTo(cx - mouthW * 0.75, mouthY + mouthH * 1.4, cx - mouthW, mouthY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+      ctx.fillStyle = '#7a1941';
+      ctx.beginPath();
+      ctx.moveTo(cx - mouthW, mouthY);
+      ctx.quadraticCurveTo(cx, mouthY + 10, cx + mouthW, mouthY);
+      ctx.quadraticCurveTo(cx + mouthW * 0.75, mouthY + mouthH * 1.4, cx, mouthY + mouthH * 1.4);
+      ctx.quadraticCurveTo(cx - mouthW * 0.75, mouthY + mouthH * 1.4, cx - mouthW, mouthY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
 
-    ctx.save();
-    ctx.clip();
-    ctx.fillStyle = '#e04884';
-    ctx.beginPath();
-    ctx.ellipse(cx, mouthY + mouthH * 1.25, mouthW * 0.7, mouthH * 0.75, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = '#e04884';
+      ctx.beginPath();
+      ctx.ellipse(cx, mouthY + mouthH * 1.25, mouthW * 0.7, mouthH * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     this.texture.needsUpdate = true;
   }
@@ -1607,6 +1659,37 @@ class PinkMaimaiBuddy {
         this.setExpression('normal');
       }
     }
+
+    if (this.cutsceneActive) {
+      this.facingYaw = this.cutsceneYaw;
+      this.squashY = THREE.MathUtils.lerp(this.squashY, this.cutsceneSquash, Math.min(1, dt * 16));
+      const xzScale = 1 / Math.sqrt(this.squashY);
+      this.bodyPivot.scale.set(xzScale, this.squashY, xzScale);
+      this.bodyPivot.rotation.x = THREE.MathUtils.lerp(
+        this.bodyPivot.rotation.x,
+        -this.cutscenePitch,
+        Math.min(1, dt * 10)
+      );
+
+      const bottomOffset = (this.squashY - 1.0) * this.radius * 0.65;
+      this.group.position.set(
+        this.cutscenePos.x,
+        this.cutscenePos.y + this.cutsceneHopY + bottomOffset,
+        this.cutscenePos.z
+      );
+      this.group.rotation.y = this.facingYaw;
+
+      this.dropShadow.position.set(
+        this.cutscenePos.x,
+        this.cutscenePos.y - this.radius + 0.04,
+        this.cutscenePos.z
+      );
+      const shadowScale = THREE.MathUtils.clamp(1.0 - this.cutsceneHopY * 0.45, 0.5, 1.0);
+      this.dropShadow.scale.setScalar(shadowScale);
+      return;
+    }
+
+    this.bodyPivot.rotation.x = 0;
 
     const distPlayer = this.anchorPos.distanceTo(playerPos);
     let hopY = 0;
@@ -1639,6 +1722,11 @@ class PinkMaimaiBuddy {
     );
     this.group.rotation.y = this.facingYaw;
 
+    this.dropShadow.position.set(
+      this.anchorPos.x,
+      this.anchorPos.y - this.radius + 0.04,
+      this.anchorPos.z
+    );
     const shadowScale = THREE.MathUtils.clamp(1.0 - hopY * 0.45, 0.65, 1.0);
     this.dropShadow.scale.setScalar(shadowScale);
   }

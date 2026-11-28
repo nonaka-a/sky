@@ -90,7 +90,7 @@ class StructureBase {
   }
 
   // 浮島土台（岩・土・草原・地面コライダー）を生成する共通ヘルパー
-  buildFloatingIslandPlatform(radius = 12.6, groundLocalY = 1.2) {
+  buildFloatingIslandPlatform(radius = 12.6, groundLocalY = 1.2, flatRim = false) {
     const rScale = radius / 12.6;
     const rockMatMain = new THREE.MeshToonMaterial({ color: 0x8d99ae, flatShading: true });
     const rockMatDark = new THREE.MeshToonMaterial({ color: 0x6f7b91, flatShading: true });
@@ -143,10 +143,12 @@ class StructureBase {
     grassMesh.position.set(0, groundLocalY - 0.25, 0);
     this.group.add(grassMesh);
 
-    const rimGeo = new THREE.TorusGeometry(radius - 0.25, 0.28, 8, 36);
+    const rimGeo = flatRim
+      ? new THREE.TorusGeometry(radius - 0.18, 0.22, 8, 36)
+      : new THREE.TorusGeometry(radius - 0.25, 0.28, 8, 36);
     const rimMesh = new THREE.Mesh(rimGeo, grassEdgeMat);
     rimMesh.rotation.x = Math.PI / 2;
-    rimMesh.position.set(0, groundLocalY - 0.16, 0);
+    rimMesh.position.set(0, flatRim ? groundLocalY - 0.215 : groundLocalY - 0.16, 0);
     this.group.add(rimMesh);
 
     this.addCylinderCollider(0, 0, -4.0 * rScale, groundLocalY, radius);
@@ -266,6 +268,34 @@ class StructureBase {
             if (vel.y < hardLandingVn) hardLandingVn = vel.y;
             if (vel.y < 0) vel.y = 0;
             hitGround = true;
+            continue;
+          }
+        }
+
+        if (horizDist > col.r && pos.y > col.yMax - 0.25 && pos.y < col.yMax + radius) {
+          const radialOver = horizDist - col.r;
+          const vertOver = pos.y - col.yMax;
+          const edgeDist = Math.hypot(radialOver, vertOver);
+          if (edgeDist >= radius) continue;
+          if (edgeDist > 0.0001) {
+            const hnx = horizDist > 0.0001 ? dx / horizDist : 0;
+            const hnz = horizDist > 0.0001 ? dz / horizDist : 1;
+            const nRad = radialOver / edgeDist;
+            const ny = vertOver / edgeDist;
+            const nx = hnx * nRad;
+            const nz = hnz * nRad;
+            const pen = radius - edgeDist;
+            pos.x += nx * pen;
+            pos.y += ny * pen;
+            pos.z += nz * pen;
+            const vn = vel.x * nx + vel.y * ny + vel.z * nz;
+            if (vn < 0) {
+              if (ny > 0.45 && vn < hardLandingVn) hardLandingVn = vn;
+              vel.x -= nx * vn;
+              vel.y -= ny * vn;
+              vel.z -= nz * vn;
+            }
+            if (ny > 0.45) hitGround = true;
             continue;
           }
         }

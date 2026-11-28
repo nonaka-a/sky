@@ -97,6 +97,11 @@ class UIManager {
         game.openShopFromDialogue();
         return;
       }
+      if (game.isPinkAsking) {
+        game.sound.playClick();
+        game.startBeanstalkCutscene();
+        return;
+      }
       if (!game.isStarAsking) return;
       game.sound.playStarGreet();
       game.acceptStarTag();
@@ -108,6 +113,12 @@ class UIManager {
       if (game.isShopAsking) {
         game.sound.playClick();
         game.isShopAsking = false;
+        this.hideDialogue();
+        return;
+      }
+      if (game.isPinkAsking) {
+        game.sound.playClick();
+        game.isPinkAsking = false;
         this.hideDialogue();
         return;
       }
@@ -647,6 +658,15 @@ class UIManager {
     this.dialogueChoices.classList.add('hidden');
     this.dialogueBox.classList.add('hidden');
     this.dialogueTimer = 0;
+  }
+
+  setCutsceneMode(active) {
+    if (active) {
+      this.hideDialogue();
+      this.hud.classList.add('hidden');
+    } else {
+      this.hud.classList.remove('hidden');
+    }
   }
 
   setRespawnFlash(active) {
